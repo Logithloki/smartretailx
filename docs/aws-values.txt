@@ -1,0 +1,50 @@
+# SmartRetailX AWS Values
+# DO NOT COMMIT THIS FILE TO GITHUB
+
+AWS Account ID: 322551984077
+Region: eu-west-1
+
+# IAM
+IAM User: smartretailx-admin
+Console Login URL: https://322551984077.signin.aws.amazon.com/console
+
+# VPC (filled after terraform apply)
+VPC ID:
+Private Subnet IDs:
+Public Subnet IDs:
+Data Subnet IDs:
+
+# ECS
+Cluster Name: smartretailx-cluster
+
+# ECR URLs (filled after terraform apply)
+order-service ECR:
+inventory-service ECR:
+user-service ECR:
+product-service ECR:
+
+# DynamoDB
+Orders Table: smartretailx-orders
+Products Table: smartretailx-products
+Idempotency Table: smartretailx-idempotency
+
+# SQS (filled after terraform apply)
+Orders Queue URL:
+Orders DLQ URL:
+
+# SNS (filled after terraform apply)
+Order Confirmed ARN:
+
+# Cognito (filled in Week 2)
+User Pool ID:
+App Client ID:
+Issuer URL:
+
+# Aurora (filled in Week 2)
+Writer Endpoint:
+Database: inventory
+Username: smartretailx_admin
+
+# API Gateway (filled in Week 2)
+HTTP API URL:
+WebSocket URL:

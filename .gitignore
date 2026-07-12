@@ -1,0 +1,32 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform.lock.hcl
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.local
+venv/
+.venv/
+*.egg-info/
+htmlcov/
+.coverage
+
+# AWS
+.aws/
+*.pem
+
+# VS Code
+.vscode/settings.json
+.idea/
+
+# Docker
+*.log
+
+# Screenshots — do not commit these
+assignment-screenshots/
