@@ -64,20 +64,20 @@ services:
       localstack:
         condition: service_healthy
 
-  # inventory-service:
-  #   build:
-  #     context: ./services
-  #     dockerfile: inventory-service/Dockerfile
-  #   container_name: smartretailx-inventory-service
-  #   ports:
-  #     - "8002:8000"
-  #   env_file:
-  #     - ./services/inventory-service/.env.local
-  #   depends_on:
-  #     localstack:
-  #       condition: service_healthy
-  #     postgres:
-  #       condition: service_healthy
+  inventory-service:
+    build:
+      context: ./services
+      dockerfile: inventory-service/Dockerfile
+    container_name: smartretailx-inventory-service
+    ports:
+      - "8002:8000"
+    env_file:
+      - ./services/inventory-service/.env.local
+    depends_on:
+      localstack:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # product-service:
   #   build:
