@@ -13,8 +13,8 @@ set -euo pipefail
 REGION="${AWS_REGION:-eu-west-1}"
 POOL_ID="$(terraform -chdir=infra output -raw cognito_user_pool_id)"
 
-CUSTOMER_EMAIL="${SRX_CUSTOMER_EMAIL:-customer@smartretailx.test}"
-ADMIN_EMAIL="${SRX_ADMIN_EMAIL:-admin@smartretailx.test}"
+CUSTOMER_EMAIL="${SRX_CUSTOMER_EMAIL:-customer@example.com}"
+ADMIN_EMAIL="${SRX_ADMIN_EMAIL:-admin@example.com}"
 
 seed_user() {
   local email="$1" group="$2"

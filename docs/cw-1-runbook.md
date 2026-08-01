@@ -43,7 +43,7 @@ API=$(terraform -chdir=infra output -raw api_endpoint)
 - [ ] **No token → 401.** `curl -i "$API/v1/products"` → **`17-401-no-token.png`**
 - [ ] **Garbage token → 401.** `curl -i -H "Authorization: Bearer not.a.jwt" "$API/v1/products"`
 - [ ] **Valid token → 503.** 
-      `TOKEN=$(./scripts/get-jwt.sh customer@smartretailx.test)` then
+      `TOKEN=$(./scripts/get-jwt.sh customer@example.com)` then
       `curl -i -H "Authorization: Bearer $TOKEN" "$API/v1/products"` → **`18-503-valid-token.png`**
       *(503 = authoriser passed, ALB reached, no targets yet. This is the win.)*
       **Redact the Authorization header before saving any screenshot.**

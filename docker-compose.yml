@@ -36,10 +36,25 @@ services:
       timeout: 5s
       retries: 10
 
+  # Build context is ./services for every service so the shared srx_common
+  # package can be copied into each image.
+  user-service:
+    build:
+      context: ./services
+      dockerfile: user-service/Dockerfile
+    container_name: smartretailx-user-service
+    ports:
+      - "8003:8000"
+    env_file:
+      - ./services/user-service/.env.local
+    depends_on:
+      localstack:
+        condition: service_healthy
+
   # order-service:
   #   build:
-  #     context: ./services/order-service
-  #     dockerfile: Dockerfile
+  #     context: ./services
+  #     dockerfile: order-service/Dockerfile
   #   container_name: smartretailx-order-service
   #   ports:
   #     - "8001:8000"
@@ -48,13 +63,11 @@ services:
   #   depends_on:
   #     localstack:
   #       condition: service_healthy
-  #     postgres:
-  #       condition: service_healthy
 
   # inventory-service:
   #   build:
-  #     context: ./services/inventory-service
-  #     dockerfile: Dockerfile
+  #     context: ./services
+  #     dockerfile: inventory-service/Dockerfile
   #   container_name: smartretailx-inventory-service
   #   ports:
   #     - "8002:8000"
@@ -66,23 +79,10 @@ services:
   #     postgres:
   #       condition: service_healthy
 
-  # user-service:
-  #   build:
-  #     context: ./services/user-service
-  #     dockerfile: Dockerfile
-  #   container_name: smartretailx-user-service
-  #   ports:
-  #     - "8003:8000"
-  #   env_file:
-  #     - ./services/user-service/.env.local
-  #   depends_on:
-  #     localstack:
-  #       condition: service_healthy
-
   # product-service:
   #   build:
-  #     context: ./services/product-service
-  #     dockerfile: Dockerfile
+  #     context: ./services
+  #     dockerfile: product-service/Dockerfile
   #   container_name: smartretailx-product-service
   #   ports:
   #     - "8004:8000"

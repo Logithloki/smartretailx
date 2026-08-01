@@ -29,3 +29,5 @@ htmlcov/
 
 # Account-specific values — never commit (its own header says so)
 docs/aws-values.txt
+# pytest
+.pytest_cache/
