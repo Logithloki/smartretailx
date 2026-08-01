@@ -81,6 +81,36 @@ output "alb_dns_name" {
   value       = one(aws_lb.main[*].dns_name)
 }
 
+output "api_endpoint" {
+  description = "HTTP API base URL - all service calls go through here"
+  value       = aws_apigatewayv2_stage.default.invoke_url
+}
+
+output "vpc_link_id" {
+  description = "API Gateway VPC Link ID"
+  value       = aws_apigatewayv2_vpc_link.main.id
+}
+
+output "cognito_user_pool_id" {
+  description = "Cognito user pool ID"
+  value       = aws_cognito_user_pool.main.id
+}
+
+output "cognito_app_client_id" {
+  description = "Cognito SPA app client ID (public client - no secret)"
+  value       = aws_cognito_user_pool_client.spa.id
+}
+
+output "cognito_issuer" {
+  description = "JWT issuer URL used by the API Gateway authorizer and service middleware"
+  value       = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
+}
+
+output "cognito_hosted_ui_url" {
+  description = "Cognito hosted-UI login URL (SPA authorization-code + PKCE entry point)"
+  value       = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com"
+}
+
 output "alb_security_group_id" {
   description = "ALB security group ID"
   value       = aws_security_group.alb.id

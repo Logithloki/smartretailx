@@ -17,3 +17,6 @@ provider "aws" {
     }
   }
 }
+
+# Used to make the Cognito hosted-UI domain prefix globally unique.
+data "aws_caller_identity" "current" {}

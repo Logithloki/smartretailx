@@ -86,6 +86,15 @@ Corruption: PITR, RPO ≈ 5 min · Region loss: RTO 30–45 min / RPO ≤ 1 h (t
   LocalStack Community CANNOT emulate: EventBridge Pipes, API GW v2 (HTTP+WebSocket),
   Cognito, ALB, X-Ray, IAM enforcement — those are validated on real AWS in weekly windows
 
+## Credential hygiene — standing orders
+- NEVER read, cat, print, or copy ~/.aws/credentials, ~/.aws/config, or any
+  AWS_SECRET/SESSION env var value. Auth happens implicitly via my configured
+  AWS CLI profile — you never need the key values themselves.
+- NEVER write access keys, secrets, tokens, or JWT values into CLAUDE.md,
+  memory files, code, comments, commits, or logs. Account ID and resource
+  IDs/ARNs are fine; key material never is.
+- If any command output contains a secret value, redact it before quoting.
+
 ## Weekly plan (from late July → 30 Sep)
 1. **Infra corrections week**: fix backlog items 1–9 + 11, apply once, validate, park
 2. Order Service + Product Service (local); weekly AWS window: deploy + wire JWT authoriser

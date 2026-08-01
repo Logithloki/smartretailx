@@ -45,3 +45,23 @@ variable "data_subnet_cidrs" {
   type        = list(string)
   default     = ["10.0.20.0/24", "10.0.21.0/24"]
 }
+
+# Week 5 D4 appends the CloudFront distribution URL to all three of these
+# once the SPA is deployed. Vite's dev server is the local default.
+variable "frontend_callback_urls" {
+  description = "Cognito hosted-UI callback URLs (authorization-code + PKCE)"
+  type        = list(string)
+  default     = ["http://localhost:5173", "http://localhost:5173/callback"]
+}
+
+variable "frontend_logout_urls" {
+  description = "Cognito hosted-UI post-logout redirect URLs"
+  type        = list(string)
+  default     = ["http://localhost:5173"]
+}
+
+variable "cors_allow_origins" {
+  description = "Origins allowed to call the HTTP API from a browser"
+  type        = list(string)
+  default     = ["http://localhost:5173"]
+}
