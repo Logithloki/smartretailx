@@ -1,0 +1,575 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-07-25T00:00:00.000Z" agent="claude" version="24.0.0" type="device">
+  <diagram id="smartretailx-v3" name="AWS Architecture v3">
+    <mxGraphModel dx="2320" dy="1600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2320" pageHeight="1940" math="0" shadow="0" background="#ffffff">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- TITLE -->
+        <mxCell id="title" value="SmartRetailX — AWS Cloud Architecture (eu-west-1 · Multi-Region-Ready)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=22;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="380" y="14" width="1200" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="ECS Fargate (Graviton) microservices · event-driven saga · cost-engineered ≈ $80/mo" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=12;fontStyle=2;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="380" y="48" width="1200" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══ EXTERNAL ACTORS (left column) ═══ -->
+        <mxCell id="cust" value="" style="rounded=1;fillColor=#dae8fc;strokeColor=#4a6fa5;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="20" y="110" width="140" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="cust_icon" value="" style="shape=mxgraph.aws4.user;fillColor=#1a73e8;strokeColor=#1a73e8;" vertex="1" parent="1">
+          <mxGeometry x="64" y="118" width="52" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="cust_l" value="Customers&lt;br&gt;React SPA (CRUD UI) · holds JWT" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="20" y="168" width="140" height="44" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="monolith" value="&lt;s&gt;Legacy Monolith&lt;/s&gt;&lt;br&gt;&lt;font color=&quot;#999999&quot;&gt;Strangler Fig — routes&lt;br&gt;migrate via CloudFront&lt;br&gt;behaviors&lt;/font&gt;" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;strokeWidth=2;dashed=1;fontSize=9;fontStyle=2;html=1;verticalAlign=middle;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="20" y="330" width="140" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="payment" value="Payment Gateway&lt;br&gt;(Stripe / PayPal)&lt;br&gt;&lt;font color=&quot;#cc0000&quot;&gt;tokenised — no card&lt;br&gt;data in AWS (SAQ-A)&lt;/font&gt;" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;fontSize=9;fontStyle=1;html=1;verticalAlign=middle;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="20" y="560" width="140" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══ EDGE &amp; IDENTITY BAND ═══ -->
+        <mxCell id="edge_band" value="EDGE &amp;amp; IDENTITY — security perimeter" style="swimlane;startSize=26;fillColor=#fff0f0;strokeColor=#cc0000;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#cc0000;html=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="90" width="1520" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="r53" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.route_53;fillColor=#8C4FFF;strokeColor=#ffffff;" vertex="1" parent="edge_band">
+          <mxGeometry x="210" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="r53_l" value="Route 53 (design intent)&lt;br&gt;demo uses default&lt;br&gt;AWS URLs" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="edge_band">
+          <mxGeometry x="177" y="102" width="120" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;fillColor=#8C4FFF;strokeColor=#ffffff;" vertex="1" parent="edge_band">
+          <mxGeometry x="380" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="cf_l" value="CloudFront + WAF&lt;br&gt;dual origin:&lt;br&gt;S3 + /api/*" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="edge_band">
+          <mxGeometry x="342" y="102" width="130" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="cog" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;fillColor=#BF0816;strokeColor=#ffffff;" vertex="1" parent="edge_band">
+          <mxGeometry x="560" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="cog_l" value="Cognito User Pool&lt;br&gt;OAuth2 + PKCE → JWT&lt;br&gt;groups: customer · admin" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="edge_band">
+          <mxGeometry x="515" y="102" width="145" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="apigw" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.api_gateway;fillColor=#E7157B;strokeColor=#ffffff;" vertex="1" parent="edge_band">
+          <mxGeometry x="760" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="apigw_l" value="④ HTTP API v2&lt;br&gt;JWT authoriser (JWKS)&lt;br&gt;−71% vs REST (ADR-02)" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="edge_band">
+          <mxGeometry x="715" y="102" width="145" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="vpclink" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.vpc;fillColor=#8C4FFF;strokeColor=#ffffff;" vertex="1" parent="edge_band">
+          <mxGeometry x="940" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="vpclink_l" value="⑤ VPC Link&lt;br&gt;private integration&lt;br&gt;→ internal ALB" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="edge_band">
+          <mxGeometry x="895" y="102" width="145" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="wsapi" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.api_gateway;fillColor=#0066cc;strokeColor=#ffffff;" vertex="1" parent="edge_band">
+          <mxGeometry x="1140" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="wsapi_l" value="WebSocket API&lt;br&gt;⑨ live status → client&lt;br&gt;JWT checked on $connect" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="edge_band">
+          <mxGeometry x="1097" y="102" width="140" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="waf_note" value="WAF cannot attach to&lt;br&gt;HTTP API → lives on&lt;br&gt;CloudFront (ADR-02)" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#cc0000;align=center;strokeColor=#cc0000;fillColor=#fff8f8;rounded=1;" vertex="1" parent="edge_band">
+          <mxGeometry x="1300" y="52" width="190" height="70" as="geometry"/>
+        </mxCell>
+        <!-- edge band internal edges -->
+        <mxCell id="eb3" value="③ /api/*" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;fontStyle=1;strokeColor=#1a73e8;strokeWidth=2;html=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;fontColor=#1a73e8;" edge="1" parent="edge_band" source="cf" target="apigw">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="470" y="71"/>
+              <mxPoint x="470" y="32"/>
+              <mxPoint x="787" y="32"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="eb4" value="JWKS" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;strokeColor=#BF0816;dashed=1;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontColor=#BF0816;" edge="1" parent="edge_band" source="cog" target="apigw">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="eb5" value="authorised" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;fontStyle=1;strokeColor=#1a73e8;strokeWidth=2;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontColor=#1a73e8;" edge="1" parent="edge_band" source="apigw" target="vpclink">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- client edges -->
+        <mxCell id="e2" value="② HTTPS + Bearer JWT" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#1a73e8;strokeWidth=2;html=1;entryX=0.5;entryY=0;fontColor=#1a73e8;" edge="1" parent="1" target="cf">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="90" y="110" as="sourcePoint"/>
+            <Array as="points">
+              <mxPoint x="90" y="82"/>
+              <mxPoint x="587" y="82"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e1" value="① OAuth login → JWT (out-of-band)" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#BF0816;dashed=1;html=1;entryX=0.5;entryY=1;fontColor=#BF0816;" edge="1" parent="1" target="cog_l">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="90" y="220" as="sourcePoint"/>
+            <Array as="points">
+              <mxPoint x="90" y="284"/>
+              <mxPoint x="747" y="284"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ═══ VPC ═══ -->
+        <mxCell id="vpc" value="VPC 10.0.0.0/16 — eu-west-1 · Multi-AZ · Flow Logs ✓" style="swimlane;startSize=26;fillColor=#eef6fa;strokeColor=#0066cc;strokeWidth=3;fontStyle=1;fontSize=13;fontColor=#0066cc;html=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="300" width="1520" height="620" as="geometry"/>
+        </mxCell>
+
+        <!-- Internal ALB strip (multi-AZ, drawn once) -->
+        <mxCell id="alb_strip" value="" style="rounded=1;fillColor=#f5e6ff;strokeColor=#6600cc;strokeWidth=2;" vertex="1" parent="vpc">
+          <mxGeometry x="15" y="34" width="1490" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="alb" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;fillColor=#8C4FFF;strokeColor=#ffffff;" vertex="1" parent="vpc">
+          <mxGeometry x="715" y="45" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="alb_l1" value="⑤ INTERNAL ALB — multi-AZ (nodes in private app subnets A + B)&lt;br&gt;path routing /v1/* · 4 target groups · health checks · no public route to Grafana" style="text;html=1;align=left;fontSize=10;fontStyle=1;fontColor=#6600cc;spacingLeft=10;" vertex="1" parent="vpc">
+          <mxGeometry x="30" y="44" width="670" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="alb_l2" value="No public entry point — reachable only from VPC Link ENIs (security-group scoped)" style="text;html=1;align=right;fontSize=10;fontStyle=3;fontColor=#cc0000;spacingRight=10;" vertex="1" parent="vpc">
+          <mxGeometry x="800" y="52" width="690" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- AZ-A -->
+        <mxCell id="aza" value="Availability Zone A (eu-west-1a)" style="swimlane;startSize=22;fillColor=#f4fef4;strokeColor=#007700;strokeWidth=2;fontStyle=1;fontSize=11;fontColor=#007700;html=1;" vertex="1" parent="vpc">
+          <mxGeometry x="15" y="126" width="735" height="478" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_a" value="Public Subnet 10.0.1.0/24" style="swimlane;startSize=18;fillColor=#fffde8;strokeColor=#ccaa00;fontStyle=1;fontSize=10;html=1;fontColor=#7a6600;" vertex="1" parent="aza">
+          <mxGeometry x="10" y="24" width="715" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="igw" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.internet_gateway;fillColor=#8C4FFF;strokeColor=#ffffff;" vertex="1" parent="pub_a">
+          <mxGeometry x="24" y="12" width="42" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="igw_l" value="Internet GW" style="text;html=1;align=center;fontSize=9;fontColor=#1a1a2e;" vertex="1" parent="pub_a">
+          <mxGeometry x="8" y="56" width="76" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="nat" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.nat_gateway;fillColor=#8C4FFF;strokeColor=#ffffff;" vertex="1" parent="pub_a">
+          <mxGeometry x="230" y="12" width="42" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="nat_l" value="NAT — single (ADR-04)&lt;br&gt;3rd-party egress · ≈ $35/mo" style="text;html=1;align=center;fontSize=9;fontColor=#1a1a2e;" vertex="1" parent="pub_a">
+          <mxGeometry x="160" y="54" width="184" height="22" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_a_note" value="No public ALB — ingress only via&lt;br&gt;CloudFront → API GW → VPC Link" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#cc0000;align=center;strokeColor=#cc0000;fillColor=#fff8f8;rounded=1;" vertex="1" parent="pub_a">
+          <mxGeometry x="440" y="14" width="250" height="48" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="priv_a" value="Private App Subnet 10.0.10.0/24 — egress via NAT only" style="swimlane;startSize=18;fillColor=#faf3ff;strokeColor=#6600cc;fontStyle=1;fontSize=10;html=1;fontColor=#6600cc;" vertex="1" parent="aza">
+          <mxGeometry x="10" y="112" width="715" height="210" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc_order" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="priv_a">
+          <mxGeometry x="40" y="30" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc_order_l" value="⑥ Order Service&lt;br&gt;Pydantic · idempotency&lt;br&gt;DDB write · SQS publish" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="priv_a">
+          <mxGeometry x="0" y="88" width="135" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc_inv" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="priv_a">
+          <mxGeometry x="200" y="30" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc_inv_l" value="⑦ Inventory Service&lt;br&gt;SQS consumer (retry + breaker)&lt;br&gt;Aurora · SNS publish" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="priv_a">
+          <mxGeometry x="152" y="88" width="150" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc_user" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="priv_a">
+          <mxGeometry x="380" y="30" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc_user_l" value="User Service&lt;br&gt;Cognito · RBAC&lt;br&gt;GDPR erasure" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="priv_a">
+          <mxGeometry x="342" y="88" width="130" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc_prod" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="priv_a">
+          <mxGeometry x="540" y="30" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="svc_prod_l" value="Product Service&lt;br&gt;DDB + TTL cache&lt;br&gt;Global Table read" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="priv_a">
+          <mxGeometry x="498" y="88" width="138" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="priv_a_note" value="★ ARM64 Graviton −20% (ADR-08) · autoscaling CPU &amp;gt; 70% → 1–5 tasks · deployment circuit breaker + rollback · secrets via valueFrom" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#cc6600;align=center;" vertex="1" parent="priv_a">
+          <mxGeometry x="20" y="162" width="680" height="34" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="data_a" value="Isolated Data Subnet 10.0.20.0/24 — dedicated route table · no internet · gateway endpoints only" style="swimlane;startSize=18;fillColor=#eaf2fd;strokeColor=#1a73e8;fontStyle=1;fontSize=10;html=1;fontColor=#1a73e8;" vertex="1" parent="aza">
+          <mxGeometry x="10" y="330" width="715" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="aurora_a" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.aurora;fillColor=#2E73B8;strokeColor=#ffffff;" vertex="1" parent="data_a">
+          <mxGeometry x="398" y="26" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="aurora_a_l" value="Aurora Serverless v2 (PG16) — writer · min 0 ACU auto-pause ★ / max 2 · managed pwd ✓ · PITR ✓ · KMS ✓" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="data_a">
+          <mxGeometry x="310" y="84" width="250" height="44" as="geometry"/>
+        </mxCell>
+
+        <!-- AZ-B -->
+        <mxCell id="azb" value="Availability Zone B (eu-west-1b)" style="swimlane;startSize=22;fillColor=#f4fef4;strokeColor=#007700;strokeWidth=2;fontStyle=1;fontSize=11;fontColor=#007700;html=1;" vertex="1" parent="vpc">
+          <mxGeometry x="770" y="126" width="735" height="478" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_b" value="Public Subnet 10.0.2.0/24" style="swimlane;startSize=18;fillColor=#fffde8;strokeColor=#ccaa00;fontStyle=1;fontSize=10;html=1;fontColor=#7a6600;" vertex="1" parent="azb">
+          <mxGeometry x="10" y="24" width="715" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_b_note" value="2nd NAT — REJECTED (ADR-04): +$35/mo buys resilience only for 3rd-party egress;&lt;br&gt;single NAT = documented, conscious SPOF" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#666666;align=center;" vertex="1" parent="pub_b">
+          <mxGeometry x="20" y="16" width="675" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="priv_b" value="Private App Subnet 10.0.11.0/24" style="swimlane;startSize=18;fillColor=#faf3ff;strokeColor=#6600cc;fontStyle=1;fontSize=10;html=1;fontColor=#6600cc;" vertex="1" parent="azb">
+          <mxGeometry x="10" y="112" width="715" height="210" as="geometry"/>
+        </mxCell>
+        <mxCell id="ecs_b" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="priv_b">
+          <mxGeometry x="60" y="30" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="ecs_b_l" value="Same services —&lt;br&gt;tasks spread across AZs&lt;br&gt;ALB targets in both" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="priv_b">
+          <mxGeometry x="8" y="88" width="160" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="priv_b_note" value="Intra-region HA: ALB health checks evict failed-AZ targets in seconds&lt;br&gt;(Route 53 failover = cross-Region only)&lt;br&gt;&lt;br&gt;Chaos demo: kill task under k6 load → traffic reroutes, autoscaler recovers" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#6600cc;align=left;spacingLeft=8;spacingTop=4;strokeColor=#6600cc;fillColor=#ffffff;rounded=1;verticalAlign=top;" vertex="1" parent="priv_b">
+          <mxGeometry x="230" y="36" width="460" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="data_b" value="Isolated Data Subnet 10.0.21.0/24 — no internet route" style="swimlane;startSize=18;fillColor=#eaf2fd;strokeColor=#1a73e8;fontStyle=1;fontSize=10;html=1;fontColor=#1a73e8;" vertex="1" parent="azb">
+          <mxGeometry x="10" y="330" width="715" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="aurora_b" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.aurora;fillColor=#2E73B8;strokeColor=#ffffff;" vertex="1" parent="data_b">
+          <mxGeometry x="60" y="26" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="aurora_b_l" value="Aurora reader — PROD: failover &amp;lt; 60 s&lt;br&gt;DEV: writer-only + PITR (cost-first)" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="data_b">
+          <mxGeometry x="0" y="84" width="210" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="ep_box" value="VPC Endpoints" style="swimlane;startSize=18;fillColor=#f3f0ff;strokeColor=#6600cc;fontSize=9;fontStyle=1;html=1;fontColor=#6600cc;" vertex="1" parent="data_b">
+          <mxGeometry x="380" y="14" width="320" height="118" as="geometry"/>
+        </mxCell>
+        <mxCell id="ep1" value="DynamoDB Gateway — FREE ✓" style="text;html=1;fontSize=9;align=center;fillColor=#e8e8ff;strokeColor=#6600cc;rounded=1;fontColor=#1a1a2e;" vertex="1" parent="ep_box">
+          <mxGeometry x="10" y="24" width="145" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="ep2" value="S3 Gateway — FREE ✓" style="text;html=1;fontSize=9;align=center;fillColor=#e8e8ff;strokeColor=#6600cc;rounded=1;fontColor=#1a1a2e;" vertex="1" parent="ep_box">
+          <mxGeometry x="165" y="24" width="145" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="ep3" value="Interface EPs rejected: 8 × ≈$8 ≈ $64/mo&lt;br&gt;&amp;gt; single NAT ≈ $35 (ADR-04)" style="text;html=1;fontSize=9;fontStyle=3;fontColor=#6600cc;align=center;" vertex="1" parent="ep_box">
+          <mxGeometry x="10" y="62" width="300" height="44" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══ EVENT-DRIVEN LAYER ═══ -->
+        <mxCell id="ev" value="EVENT-DRIVEN LAYER — commands: SQS · domain events: EventBridge · fan-out: SNS" style="swimlane;startSize=26;fillColor=#fff8e8;strokeColor=#cc6600;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#cc6600;html=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="1000" width="1520" height="250" as="geometry"/>
+        </mxCell>
+        <mxCell id="sqs" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;fillColor=#E7157B;strokeColor=#ffffff;" vertex="1" parent="ev">
+          <mxGeometry x="65" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="sqs_l" value="⑥ SQS orders-queue&lt;br&gt;long polling 20 s · vis 30 s" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="ev">
+          <mxGeometry x="10" y="112" width="165" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="dlq" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;fillColor=#cc0000;strokeColor=#ffffff;" vertex="1" parent="ev">
+          <mxGeometry x="74" y="164" width="36" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="dlq_l" value="DLQ (3× fail) · alarm ≥ 1 · replay runbook" style="text;html=1;align=center;fontSize=9;fontColor=#cc0000;fontStyle=3;" vertex="1" parent="ev">
+          <mxGeometry x="6" y="202" width="175" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="dlq_e" value="" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;strokeColor=#cc0000;dashed=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="ev" source="sqs" target="dlq">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pipes_bg" value="" style="rounded=1;fillColor=#fff0e0;strokeColor=#FF6600;strokeWidth=3;" vertex="1" parent="ev">
+          <mxGeometry x="270" y="40" width="230" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="pipes" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;fillColor=#E7157B;strokeColor=#ffffff;" vertex="1" parent="ev">
+          <mxGeometry x="358" y="56" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="pipes_l" value="⑧ EventBridge Pipes ★&lt;br&gt;DDB Streams → Bus&lt;br&gt;filter: status-changed&lt;br&gt;zero glue code — DIFFERENTIATOR" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#FF6600;" vertex="1" parent="ev">
+          <mxGeometry x="278" y="114" width="214" height="66" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="bus" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eventbridge;fillColor=#cc6600;strokeColor=#ffffff;" vertex="1" parent="ev">
+          <mxGeometry x="560" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="bus_l" value="EventBridge Bus + Rules&lt;br&gt;route by detail-type&lt;br&gt;archive + replay ✓" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="ev">
+          <mxGeometry x="512" y="112" width="150" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="sched" value="★ Scheduler: 00:00 scale-to-zero&lt;br&gt;08:00 up · daily stock-recon cron" style="text;html=1;fontSize=9;fontStyle=1;fontColor=#006600;align=center;strokeColor=#007700;fillColor=#f0fff0;rounded=1;" vertex="1" parent="ev">
+          <mxGeometry x="516" y="176" width="200" height="44" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sns" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sns;fillColor=#E7157B;strokeColor=#ffffff;" vertex="1" parent="ev">
+          <mxGeometry x="700" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="sns_l" value="SNS order-events&lt;br&gt;fan-out: confirmed · rejected" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="ev">
+          <mxGeometry x="648" y="112" width="160" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="notif" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="ev">
+          <mxGeometry x="880" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="notif_l" value="⑨ Notification λ&lt;br&gt;Powertools: log · trace ·&lt;br&gt;idempotency" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="ev">
+          <mxGeometry x="836" y="112" width="142" height="52" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ses" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.simple_email_service;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="ev">
+          <mxGeometry x="1060" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="ses_l" value="SES email&lt;br&gt;sandbox: verified&lt;br&gt;recipients ⚠" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="ev">
+          <mxGeometry x="1020" y="112" width="135" height="52" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="wsl" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#0066cc;strokeColor=#ffffff;" vertex="1" parent="ev">
+          <mxGeometry x="1240" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="wsl_l" value="⑨ WS-push λ&lt;br&gt;postToConnection&lt;br&gt;→ WebSocket API (edge)" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="ev">
+          <mxGeometry x="1192" y="112" width="150" height="52" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="saga" value="★ Saga (choreography, ADR-06): stock short → &#39;order-rejected&#39; → Order Service compensates (status = REJECTED) · idempotent retries" style="text;html=1;fontSize=9;fontStyle=1;fontColor=#cc0000;align=center;strokeColor=#cc0000;fillColor=#fff8f8;rounded=1;" vertex="1" parent="ev">
+          <mxGeometry x="770" y="188" width="600" height="36" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ev1" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FF6600;strokeWidth=2;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="ev" source="pipes" target="bus">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ev2" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#cc6600;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="ev" source="bus" target="sns">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ev3" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#cc6600;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="ev" source="sns" target="notif">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ev4" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FF9900;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="ev" source="notif" target="ses">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ev5" value="rule: status-changed" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;strokeColor=#0066cc;dashed=1;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=0;fontColor=#0066cc;" edge="1" parent="ev" source="bus" target="wsl">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="587" y="34"/>
+              <mxPoint x="1267" y="34"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ═══ DATA LAYER ═══ -->
+        <mxCell id="data" value="DATA LAYER — polyglot persistence (ADR-03): key-value ↔ DynamoDB · relational ↔ Aurora" style="swimlane;startSize=26;fillColor=#eaf2fd;strokeColor=#1a73e8;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#1a73e8;html=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="1290" width="1520" height="210" as="geometry"/>
+        </mxCell>
+        <mxCell id="ddb" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.dynamodb;fillColor=#2E73B8;strokeColor=#ffffff;" vertex="1" parent="data">
+          <mxGeometry x="90" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="ddb_l" value="DynamoDB on-demand&lt;br&gt;orders: PITR ✓ · GSI userId · Streams ✓ · NO TTL&lt;br&gt;products: GSI category · Streams ✓ · ★ Global Table" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="data">
+          <mxGeometry x="10" y="112" width="220" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="ddb2" value="idempotency (TTL ✓)&lt;br&gt;ws-connections (TTL ✓)" style="text;html=1;fontSize=9;align=center;fillColor=#f5faff;strokeColor=#1a73e8;rounded=1;fontColor=#1a1a2e;" vertex="1" parent="data">
+          <mxGeometry x="260" y="60" width="160" height="42" as="geometry"/>
+        </mxCell>
+        <mxCell id="cache" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elasticache;fillColor=#2E73B8;strokeColor=#ffffff;" vertex="1" parent="data">
+          <mxGeometry x="500" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="cache_l" value="Per-task TTL cache&lt;br&gt;≈ 2 ms vs ≈ 120 ms&lt;br&gt;prod: ElastiCache Serverless" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="data">
+          <mxGeometry x="452" y="112" width="150" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3a" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#2E73B8;strokeColor=#ffffff;" vertex="1" parent="data">
+          <mxGeometry x="720" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3a_l" value="S3 — SPA + images&lt;br&gt;CloudFront OAC origin&lt;br&gt;Block Public Access ✓" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="data">
+          <mxGeometry x="676" y="112" width="142" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3l" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#555555;strokeColor=#ffffff;" vertex="1" parent="data">
+          <mxGeometry x="940" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3l_l" value="S3 — audit logs&lt;br&gt;KMS · 365 d → Glacier" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="data">
+          <mxGeometry x="896" y="112" width="142" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="ecr" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecr;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="data">
+          <mxGeometry x="1160" y="54" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="ecr_l" value="ECR — IMMUTABLE tags&lt;br&gt;scan-on-push · keep-5&lt;br&gt;ARM64 images ≈ 120 MB" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="data">
+          <mxGeometry x="1112" y="112" width="150" height="52" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══ OBSERVABILITY ═══ -->
+        <mxCell id="obs" value="⑩ OBSERVABILITY — every hop emits traces · logs · metrics" style="swimlane;startSize=26;fillColor=#f0ffe8;strokeColor=#007700;strokeWidth=2;fontStyle=1;fontSize=13;fontColor=#007700;html=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="1540" width="1520" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="cw" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch;fillColor=#E7157B;strokeColor=#ffffff;" vertex="1" parent="obs">
+          <mxGeometry x="60" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="cw_l" value="CloudWatch dashboards&lt;br&gt;alarms: DLQ ≥ 1 · p95 · 5xx&lt;br&gt;SQS depth · $50 billing" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="obs">
+          <mxGeometry x="10" y="102" width="156" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="xray_chip" value="&lt;b&gt;X-Ray + ADOT (OpenTelemetry)&lt;/b&gt;&lt;br&gt;&lt;br&gt;distributed traces&lt;br&gt;service map&lt;br&gt;vendor-neutral SDK" style="text;html=1;fontSize=10;align=center;strokeColor=#E7157B;fillColor=#fdf0f6;rounded=1;verticalAlign=middle;fontColor=#1a1a2e;" vertex="1" parent="obs">
+          <mxGeometry x="250" y="44" width="190" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="graf_bg" value="" style="rounded=1;fillColor=#fdf1e7;strokeColor=#f57400;strokeWidth=3;" vertex="1" parent="obs">
+          <mxGeometry x="490" y="34" width="270" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="graf" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.ecs;fillColor=#f57400;strokeColor=#ffffff;" vertex="1" parent="obs">
+          <mxGeometry x="598" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="graf_l" value="Grafana OSS on Fargate ≈ $3/mo (−90%, ADR-05)&lt;br&gt;dashboards provisioned-as-code&lt;br&gt;never public — access via SSM port-forward" style="text;html=1;align=center;fontSize=9;fontStyle=1;fontColor=#f57400;" vertex="1" parent="obs">
+          <mxGeometry x="496" y="104" width="258" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="pt" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#FF9900;strokeColor=#ffffff;" vertex="1" parent="obs">
+          <mxGeometry x="820" y="44" width="54" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="pt_l" value="Lambda Powertools&lt;br&gt;structured JSON logs&lt;br&gt;correlation IDs" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="obs">
+          <mxGeometry x="776" y="102" width="142" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="obs_chip1" value="Container Insights ✓&lt;br&gt;VPC Flow Logs ✓&lt;br&gt;ALB access logs → S3" style="text;html=1;fontSize=10;align=center;strokeColor=#007700;fillColor=#ffffff;rounded=1;verticalAlign=middle;fontColor=#1a1a2e;" vertex="1" parent="obs">
+          <mxGeometry x="990" y="44" width="200" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="obs_chip2" value="Fault-diagnosis evidence:&lt;br&gt;DLQ poison-message demo&lt;br&gt;chaos task-kill trace" style="text;html=1;fontSize=10;align=center;strokeColor=#007700;fillColor=#ffffff;rounded=1;verticalAlign=middle;fontColor=#1a1a2e;" vertex="1" parent="obs">
+          <mxGeometry x="1230" y="44" width="210" height="112" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══ COST FOOTER ═══ -->
+        <mxCell id="footer" value="💰 COST — stack ≈ $80/mo vs conventional ≈ $241/mo (−67%) · Fargate $0 idle vs EKS $73 · HTTP API −71% vs REST · Grafana OSS −90% · Graviton −20%&lt;br&gt;Aurora min-0 auto-pause · gateway endpoints FREE (interface EPs rejected, ADR-04) · single NAT ≈ $35 · nightly Scheduler scale-to-zero · evidence: real Cost Explorer bill" style="text;html=1;fontSize=11;strokeColor=#007700;fillColor=#f0fff0;rounded=1;align=center;fontStyle=1;verticalAlign=middle;fontColor=#004d00;" vertex="1" parent="1">
+          <mxGeometry x="180" y="1780" width="1520" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══ CROSS-BAND EDGES (few, straight, in empty corridors) ═══ -->
+        <mxCell id="e5" value="⑤ private integration" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#1a73e8;strokeWidth=2;html=1;exitX=0.5;exitY=1;entryX=0.62;entryY=0;fontColor=#1a73e8;" edge="1" parent="1" source="vpclink" target="alb_strip">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="routes to targets" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;strokeColor=#1a73e8;html=1;exitX=0.06;exitY=1;entryX=0.5;entryY=0;fontColor=#1a73e8;" edge="1" parent="1" source="alb_strip" target="svc_order">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" value="⑥ publish" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#cc6600;strokeWidth=2;dashed=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontColor=#cc6600;" edge="1" parent="1" source="svc_order" target="sqs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="⑦ consume" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#cc6600;strokeWidth=2;dashed=1;html=1;exitX=1;exitY=0.5;entryX=0.25;entryY=1;fontColor=#cc6600;" edge="1" parent="1" source="sqs" target="svc_inv">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="336" y="1081"/>
+              <mxPoint x="336" y="970"/>
+              <mxPoint x="418" y="970"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="reserve stock (SQL)" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;fontStyle=1;strokeColor=#1a73e8;strokeWidth=2;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontColor=#1a73e8;" edge="1" parent="1" source="svc_inv" target="aurora_a">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="432" y="752"/>
+              <mxPoint x="630" y="752"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" value="order-confirmed" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#cc6600;strokeWidth=2;dashed=1;html=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;fontColor=#cc6600;" edge="1" parent="1" source="svc_inv" target="sns">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="485" y="595"/>
+              <mxPoint x="485" y="955"/>
+              <mxPoint x="907" y="955"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" value="order-rejected → compensate ★" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#BF0816;strokeWidth=2;dashed=1;html=1;exitX=0.25;exitY=0;entryX=0.75;entryY=1;fontColor=#BF0816;" edge="1" parent="1" source="sns" target="svc_order">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="893" y="940"/>
+              <mxPoint x="286" y="940"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" value="⑧ Streams → Pipe" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#FF6600;strokeWidth=4;fontColor=#FF6600;html=1;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="ddb" target="pipes_bg">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="297" y="1268"/>
+              <mxPoint x="565" y="1268"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13" value="tokenised payment" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;fontStyle=3;strokeColor=#666666;dashed=1;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;fontColor=#666666;" edge="1" parent="1" source="svc_order" target="payment">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="rep_edge" value="Aurora storage: 6 copies / 3 AZs — RPO ≈ 0" style="edgeStyle=orthogonalEdgeStyle;fontSize=10;fontStyle=1;strokeColor=#1a73e8;strokeWidth=2;dashed=1;endArrow=open;startArrow=open;fontColor=#1a73e8;html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="aurora_a" target="aurora_b">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ═══ RIGHT COLUMN ═══ -->
+        <mxCell id="legend" value="&lt;b&gt;HOW TO READ&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#1a73e8&quot;&gt;— solid blue&lt;/font&gt;: synchronous request&lt;br&gt;&lt;font color=&quot;#cc6600&quot;&gt;-- dashed orange&lt;/font&gt;: async event / queue&lt;br&gt;&lt;font color=&quot;#BF0816&quot;&gt;-- dashed red&lt;/font&gt;: identity / compensation&lt;br&gt;&lt;font color=&quot;#FF6600&quot;&gt;▬ thick orange&lt;/font&gt;: EventBridge Pipes ★&lt;br&gt;①–⑩ lifecycle · ★ differentiator · ADR-n decision" style="text;html=1;strokeColor=#666666;fillColor=#fafafa;rounded=1;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="90" width="540" height="160" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lifecycle" value="&lt;b&gt;REQUEST LIFECYCLE ①–⑩&lt;/b&gt;&lt;br&gt;① Login via Cognito (OAuth2 + PKCE) → JWT — out-of-band&lt;br&gt;② SPA → CloudFront over HTTPS with Bearer JWT (WAF inspects)&lt;br&gt;③ CloudFront routes /api/* → HTTP API · static → S3 (OAC)&lt;br&gt;④ JWT authoriser validates via JWKS · RBAC via groups claim&lt;br&gt;⑤ VPC Link → internal ALB → path-routed to service&lt;br&gt;⑥ Order: Pydantic · idempotency · DDB write · SQS publish&lt;br&gt;⑦ Inventory consumes → Aurora txn → confirm / reject → compensate&lt;br&gt;⑧ DDB Streams → EventBridge Pipes → Bus (zero glue code)&lt;br&gt;⑨ Rules → Notification λ → SES · WS-push λ → WebSocket → client&lt;br&gt;⑩ Every hop: OTel → X-Ray · logs → CloudWatch → Grafana" style="text;html=1;strokeColor=#0066cc;fillColor=#f5faff;rounded=1;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="270" width="540" height="250" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="compliance" value="&lt;b&gt;COMPLIANCE&lt;/b&gt;&lt;br&gt;Personal data never leaves the EU (DR: eu-central-1) · products-only Global Table → ap-south-1&lt;br&gt;PCI-DSS SAQ-A: card data tokenised at PSP · TLS 1.2+ · KMS at rest&lt;br&gt;HA RPO ≈ 0 · PITR RPO ≈ 0–5 min · Region loss RTO 30–45 min / RPO ≤ 1 h" style="text;html=1;strokeColor=#cc0000;fillColor=#fff8f8;rounded=1;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="540" width="540" height="130" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="profiles" value="&lt;b&gt;★ ENVIRONMENT PROFILES (same Terraform, tfvars switch)&lt;/b&gt;&lt;br&gt;dev: Aurora min 0 (auto-pause) · nightly scale-to-zero · writer-only&lt;br&gt;prod-demo (viva): pre-warmed · min 0.5 ACU · reader on · Scheduler paused" style="text;html=1;strokeColor=#007700;fillColor=#f0fff0;rounded=1;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="690" width="540" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dr_panel" value="MULTI-REGION STRATEGY (ADR-07)" style="swimlane;startSize=26;fillColor=#f5f5f5;strokeColor=#444444;strokeWidth=2;fontStyle=1;fontSize=12;fontColor=#333333;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="810" width="540" height="210" as="geometry"/>
+        </mxCell>
+        <mxCell id="dr_fr" value="&lt;b&gt;DR — eu-central-1 Frankfurt (GDPR: stays in EU)&lt;/b&gt;&lt;br&gt;Pilot-light: terraform apply ≈ 12 min (tested)&lt;br&gt;AWS Backup cross-Region snapshot copy (hourly)" style="text;html=1;fontSize=10;align=left;spacingLeft=8;spacingTop=4;strokeColor=#007700;fillColor=#f0fff0;rounded=1;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="dr_panel">
+          <mxGeometry x="12" y="34" width="516" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="dr_mum" value="&lt;b&gt;★ Expansion cell — ap-south-1 Mumbai (future APAC)&lt;/b&gt;&lt;br&gt;DynamoDB Global Table: PRODUCTS ONLY — no personal data,&lt;br&gt;so lawful multi-Region · Route 53 latency routing when live" style="text;html=1;fontSize=10;align=left;spacingLeft=8;spacingTop=4;strokeColor=#1a73e8;fillColor=#eaf2fd;rounded=1;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="dr_panel">
+          <mxGeometry x="12" y="122" width="516" height="76" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cicd" value="CI/CD &amp;amp; IaC — zero static credentials" style="swimlane;startSize=26;fillColor=#f5f5f5;strokeColor=#444444;strokeWidth=2;fontStyle=1;fontSize=12;fontColor=#333333;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="1050" width="540" height="260" as="geometry"/>
+        </mxCell>
+        <mxCell id="gh" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.general;fillColor=#333333;strokeColor=#ffffff;" vertex="1" parent="cicd">
+          <mxGeometry x="30" y="44" width="48" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="oidc" value="&lt;b&gt;GitHub&lt;/b&gt; — ★ OIDC federation → short-lived AWS role&lt;br&gt;NO access keys stored anywhere (Zero Trust)" style="text;html=1;fontSize=10;fontStyle=0;fontColor=#006600;align=left;spacingLeft=8;spacingTop=4;strokeColor=#007700;fillColor=#f0fff0;rounded=1;verticalAlign=top;" vertex="1" parent="cicd">
+          <mxGeometry x="100" y="44" width="420" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="gha" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.codepipeline;fillColor=#C925D1;strokeColor=#ffffff;" vertex="1" parent="cicd">
+          <mxGeometry x="30" y="116" width="48" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="pipeline" value="&lt;b&gt;Actions pipeline&lt;/b&gt;: pytest + coverage → checkov + tflint →&lt;br&gt;buildx ARM64 → Trivy → ECR → ecs update-service&lt;br&gt;(rolling · deployment circuit breaker · auto-rollback)" style="text;html=1;fontSize=10;align=left;spacingLeft=8;spacingTop=4;strokeColor=#C925D1;fillColor=#fdf5fe;rounded=1;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="cicd">
+          <mxGeometry x="100" y="112" width="420" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="tf" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudformation;fillColor=#C925D1;strokeColor=#ffffff;" vertex="1" parent="cicd">
+          <mxGeometry x="30" y="192" width="48" height="48" as="geometry"/>
+        </mxCell>
+        <mxCell id="tf_note" value="&lt;b&gt;Terraform&lt;/b&gt; — split files (network / data / compute / …)&lt;br&gt;state: S3 backend + locking · plan in CI" style="text;html=1;fontSize=10;align=left;spacingLeft=8;spacingTop=4;strokeColor=#C925D1;fillColor=#fdf5fe;rounded=1;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="cicd">
+          <mxGeometry x="100" y="192" width="420" height="52" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="gov" value="GOVERNANCE · SECURITY · COMPLIANCE" style="swimlane;startSize=26;fillColor=#fff0f0;strokeColor=#cc0000;strokeWidth=2;fontStyle=1;fontSize=12;fontColor=#cc0000;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="1340" width="540" height="310" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_iam" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;fillColor=#BF0816;strokeColor=#ffffff;" vertex="1" parent="gov">
+          <mxGeometry x="36" y="40" width="44" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_iam_l" value="IAM — per-service&lt;br&gt;task roles" style="text;html=1;align=center;fontSize=9;fontColor=#1a1a2e;" vertex="1" parent="gov">
+          <mxGeometry x="0" y="88" width="120" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_kms" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.key_management_service;fillColor=#BF0816;strokeColor=#ffffff;" vertex="1" parent="gov">
+          <mxGeometry x="216" y="40" width="44" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_kms_l" value="KMS — at rest:&lt;br&gt;Aurora · DDB · S3 · logs" style="text;html=1;align=center;fontSize=9;fontColor=#1a1a2e;" vertex="1" parent="gov">
+          <mxGeometry x="172" y="88" width="132" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_sm" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;fillColor=#BF0816;strokeColor=#ffffff;" vertex="1" parent="gov">
+          <mxGeometry x="396" y="40" width="44" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_sm_l" value="Secrets Manager&lt;br&gt;rotation (PCI 8.3.9)" style="text;html=1;align=center;fontSize=9;fontColor=#1a1a2e;" vertex="1" parent="gov">
+          <mxGeometry x="356" y="88" width="124" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_ct" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudtrail;fillColor=#E7157B;strokeColor=#ffffff;" vertex="1" parent="gov">
+          <mxGeometry x="36" y="140" width="44" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_ct_l" value="CloudTrail → S3&lt;br&gt;365 d → Glacier" style="text;html=1;align=center;fontSize=9;fontColor=#1a1a2e;" vertex="1" parent="gov">
+          <mxGeometry x="0" y="188" width="120" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_cfg" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.config;fillColor=#E7157B;strokeColor=#ffffff;" vertex="1" parent="gov">
+          <mxGeometry x="216" y="140" width="44" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_cfg_l" value="AWS Config&lt;br&gt;drift + compliance" style="text;html=1;align=center;fontSize=9;fontColor=#1a1a2e;" vertex="1" parent="gov">
+          <mxGeometry x="172" y="188" width="132" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_cost" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cost_explorer;fillColor=#E7157B;strokeColor=#ffffff;" vertex="1" parent="gov">
+          <mxGeometry x="396" y="140" width="44" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_cost_l" value="Budgets — $50 alarm&lt;br&gt;(metric in us-east-1)" style="text;html=1;align=center;fontSize=9;fontColor=#1a1a2e;" vertex="1" parent="gov">
+          <mxGeometry x="352" y="188" width="132" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="gov_gdpr" value="&lt;b&gt;GDPR&lt;/b&gt;: right-to-erasure runbook (Cognito + DDB cascade delete) · &lt;b&gt;PCI SAQ-A&lt;/b&gt;: card data never touches AWS" style="text;html=1;fontSize=9;align=left;spacingLeft=8;spacingTop=4;strokeColor=#cc0000;fillColor=#fff8f8;rounded=1;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="gov">
+          <mxGeometry x="12" y="240" width="516" height="56" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="rej" value="CONSIDERED &amp;amp; REJECTED — critical analysis" style="swimlane;startSize=26;fillColor=#fafafa;strokeColor=#999999;strokeWidth=2;dashed=1;fontStyle=1;fontSize=12;fontColor=#666666;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="1680" width="540" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="rej_txt" value="&lt;b&gt;EKS&lt;/b&gt; — $73/mo idle control plane vs Fargate $0 (ADR-01)&lt;br&gt;&lt;b&gt;REST API&lt;/b&gt; — ≈ 3.5× cost → Pydantic + CloudFront-WAF (ADR-02)&lt;br&gt;&lt;b&gt;Managed Grafana&lt;/b&gt; — $29/user/mo vs OSS ≈ $3 (ADR-05)&lt;br&gt;&lt;b&gt;ElastiCache&lt;/b&gt; — dev uses per-task cache; Serverless Redis = prod path (ADR-03)&lt;br&gt;&lt;b&gt;Interface endpoints&lt;/b&gt; — ≈ $64/mo &amp;gt; NAT $35 (ADR-04)&lt;br&gt;&lt;b&gt;Step Functions saga&lt;/b&gt; — orchestration overkill; choreography (ADR-06)&lt;br&gt;&lt;b&gt;MSK / Kafka&lt;/b&gt; — SQS + EventBridge cover it at ≈ $0 baseline&lt;br&gt;&lt;b&gt;x86 Fargate&lt;/b&gt; — ARM64 −20% (ADR-08); Spot evaluated for dev" style="text;html=1;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;fontColor=#1a1a2e;strokeColor=none;fillColor=none;" vertex="1" parent="rej">
+          <mxGeometry x="8" y="30" width="524" height="164" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

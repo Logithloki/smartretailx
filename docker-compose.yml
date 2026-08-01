@@ -1,0 +1,97 @@
+services:
+
+  localstack:
+    image: localstack/localstack:3.0
+    container_name: smartretailx-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs,sns,dynamodb,s3,events,secretsmanager
+      - DEBUG=0
+      - PERSISTENCE=1
+    volumes:
+      - "./localstack-init:/etc/localstack/init/ready.d"
+      - "localstack_data:/var/lib/localstack"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: smartretailx-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: inventory
+      POSTGRES_USER: smartretailx_admin
+      POSTGRES_PASSWORD: SmartRetailX2026!Secure
+    volumes:
+      - "postgres_data:/var/lib/postgresql/data"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartretailx_admin -d inventory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # order-service:
+  #   build:
+  #     context: ./services/order-service
+  #     dockerfile: Dockerfile
+  #   container_name: smartretailx-order-service
+  #   ports:
+  #     - "8001:8000"
+  #   env_file:
+  #     - ./services/order-service/.env.local
+  #   depends_on:
+  #     localstack:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
+
+  # inventory-service:
+  #   build:
+  #     context: ./services/inventory-service
+  #     dockerfile: Dockerfile
+  #   container_name: smartretailx-inventory-service
+  #   ports:
+  #     - "8002:8000"
+  #   env_file:
+  #     - ./services/inventory-service/.env.local
+  #   depends_on:
+  #     localstack:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
+
+  # user-service:
+  #   build:
+  #     context: ./services/user-service
+  #     dockerfile: Dockerfile
+  #   container_name: smartretailx-user-service
+  #   ports:
+  #     - "8003:8000"
+  #   env_file:
+  #     - ./services/user-service/.env.local
+  #   depends_on:
+  #     localstack:
+  #       condition: service_healthy
+
+  # product-service:
+  #   build:
+  #     context: ./services/product-service
+  #     dockerfile: Dockerfile
+  #   container_name: smartretailx-product-service
+  #   ports:
+  #     - "8004:8000"
+  #   env_file:
+  #     - ./services/product-service/.env.local
+  #   depends_on:
+  #     localstack:
+  #       condition: service_healthy
+
+volumes:
+  localstack_data:
+  postgres_data:
