@@ -11,6 +11,8 @@ class Settings(BaseServiceSettings):
     orders_queue_url: str = ""
     # Saga compensation receiver (Week 2 Day 5).
     order_events_queue_url: str = ""
+    # Off by default so tests and one-shot CLI use never spawn a poller.
+    compensation_consumer_enabled: bool = False
     idempotency_ttl_seconds: int = 86400
 
 

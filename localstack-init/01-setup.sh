@@ -1,19 +1,32 @@
 #!/bin/bash
 echo "Initialising SmartRetailX local AWS resources..."
 
+# Schema must mirror infra/data.tf exactly. The GSIs are not optional extras:
+# GET /v1/orders queries userId-index and the product catalogue queries
+# category-index, so a table created without them fails at runtime with
+# "Index not found" rather than at startup.
 awslocal dynamodb create-table \
   --table-name smartretailx-orders \
-  --attribute-definitions AttributeName=orderId,AttributeType=S \
+  --attribute-definitions \
+      AttributeName=orderId,AttributeType=S \
+      AttributeName=userId,AttributeType=S \
   --key-schema AttributeName=orderId,KeyType=HASH \
+  --global-secondary-indexes \
+      'IndexName=userId-index,KeySchema=[{AttributeName=userId,KeyType=HASH}],Projection={ProjectionType=ALL}' \
   --billing-mode PAY_PER_REQUEST \
   --stream-specification StreamEnabled=true,StreamViewType=NEW_AND_OLD_IMAGES \
   --region eu-west-1
 
 awslocal dynamodb create-table \
   --table-name smartretailx-products \
-  --attribute-definitions AttributeName=productId,AttributeType=S \
+  --attribute-definitions \
+      AttributeName=productId,AttributeType=S \
+      AttributeName=category,AttributeType=S \
   --key-schema AttributeName=productId,KeyType=HASH \
+  --global-secondary-indexes \
+      'IndexName=category-index,KeySchema=[{AttributeName=category,KeyType=HASH}],Projection={ProjectionType=ALL}' \
   --billing-mode PAY_PER_REQUEST \
+  --stream-specification StreamEnabled=true,StreamViewType=NEW_AND_OLD_IMAGES \
   --region eu-west-1
 
 awslocal dynamodb create-table \
@@ -39,8 +52,23 @@ awslocal sqs create-queue \
   --attributes '{"RedrivePolicy":"{\"deadLetterTargetArn\":\"arn:aws:sqs:eu-west-1:000000000000:smartretailx-orders-dlq\",\"maxReceiveCount\":\"3\"}"}' \
   --region eu-west-1
 
-awslocal sns create-topic \
+awslocal sqs create-queue \
+  --queue-name smartretailx-order-events \
+  --attributes '{"ReceiveMessageWaitTimeSeconds":"20"}' \
+  --region eu-west-1
+
+TOPIC_ARN=$(awslocal sns create-topic \
   --name smartretailx-order-confirmed \
+  --region eu-west-1 --query TopicArn --output text)
+
+# Saga compensation receiver: the Order Service consumes outcomes from here.
+# Both event types are subscribed - order-rejected drives compensation and
+# order-confirmed completes the happy path.
+awslocal sns subscribe \
+  --topic-arn "$TOPIC_ARN" \
+  --protocol sqs \
+  --notification-endpoint arn:aws:sqs:eu-west-1:000000000000:smartretailx-order-events \
+  --attributes '{"FilterPolicy":"{\"eventType\":[\"order-confirmed\",\"order-rejected\"]}"}' \
   --region eu-west-1
 
 awslocal s3 mb s3://smartretailx-assets --region eu-west-1

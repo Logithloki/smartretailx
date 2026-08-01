@@ -51,18 +51,18 @@ services:
       localstack:
         condition: service_healthy
 
-  # order-service:
-  #   build:
-  #     context: ./services
-  #     dockerfile: order-service/Dockerfile
-  #   container_name: smartretailx-order-service
-  #   ports:
-  #     - "8001:8000"
-  #   env_file:
-  #     - ./services/order-service/.env.local
-  #   depends_on:
-  #     localstack:
-  #       condition: service_healthy
+  order-service:
+    build:
+      context: ./services
+      dockerfile: order-service/Dockerfile
+    container_name: smartretailx-order-service
+    ports:
+      - "8001:8000"
+    env_file:
+      - ./services/order-service/.env.local
+    depends_on:
+      localstack:
+        condition: service_healthy
 
   # inventory-service:
   #   build:

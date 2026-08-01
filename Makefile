@@ -20,9 +20,11 @@ SERVICES := common user-service order-service inventory-service product-service
 
 test:
 	@for s in $(SERVICES); do \
-	  if [ -d "services/$$s/tests" ]; then \
+	  if ls services/$$s/tests/test_*.py >/dev/null 2>&1; then \
 	    echo "===== $$s ====="; \
 	    (cd "services/$$s" && python -m pytest) || exit 1; \
+	  else \
+	    echo "===== $$s (no tests yet, skipped) ====="; \
 	  fi; \
 	done
 

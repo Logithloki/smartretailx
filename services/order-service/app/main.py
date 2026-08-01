@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import threading
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from srx_common import Authenticator, Principal, configure_logging, set_correlation_id
 
+from .compensation import CompensationConsumer
 from .config import Settings, get_settings
 from .events import OrderCommandPublisher
 from .idempotency import (
@@ -40,10 +43,36 @@ def create_app(
     keys = idempotency or IdempotencyStore(settings)
     auth = Authenticator(settings)
 
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        """Run the saga compensation receiver alongside the API.
+
+        A background thread rather than a separate task definition: the work is
+        tiny and long-polling is idle most of the time, so a second Fargate
+        task would double the cost for no benefit at demo scale. The report
+        notes splitting it out as the scale-up path.
+        """
+        stop = threading.Event()
+        thread: threading.Thread | None = None
+
+        if settings.compensation_consumer_enabled and settings.order_events_queue_url:
+            consumer = CompensationConsumer(settings, repository=repo)
+            thread = threading.Thread(
+                target=consumer.run_forever, args=(stop,), name="compensation", daemon=True
+            )
+            thread.start()
+
+        yield
+
+        stop.set()
+        if thread is not None:
+            thread.join(timeout=5)
+
     app = FastAPI(
         title="SmartRetailX Order Service",
         version="1.0.0",
         description="Places orders and exposes a customer's order history.",
+        lifespan=lifespan,
     )
 
     @app.get("/health", response_model=HealthResponse, tags=["health"])
