@@ -155,6 +155,12 @@ resource "aws_iam_role_policy" "order_task" {
         Effect   = "Allow"
         Action   = ["sqs:SendMessage"]
         Resource = [aws_sqs_queue.orders.arn]
+      },
+      {
+        # Saga compensation receiver.
+        Effect   = "Allow"
+        Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+        Resource = [aws_sqs_queue.order_events.arn]
       }
     ]
   })

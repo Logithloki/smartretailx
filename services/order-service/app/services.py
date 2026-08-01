@@ -24,6 +24,10 @@ class OrderNotFound(Exception):
     pass
 
 
+class OrderNotPending(Exception):
+    """The order already reached a terminal state."""
+
+
 def _to_item(order: Order) -> dict:
     return {
         "orderId": order.orderId,
@@ -100,10 +104,20 @@ class OrderRepository:
         orders.sort(key=lambda o: o.createdAt, reverse=True)
         return orders
 
-    def set_status(self, order_id: str, status: OrderStatus, reason: str | None = None) -> Order:
-        """Used by the saga compensation consumer to flip PENDING -> REJECTED
-        (or CONFIRMED). Conditional on the order existing so a lost/duplicated
-        event cannot create a phantom record."""
+    def set_status(
+        self,
+        order_id: str,
+        status: OrderStatus,
+        reason: str | None = None,
+        only_if_pending: bool = False,
+    ) -> Order:
+        """Flip an order's status.
+
+        Conditional on the order existing so a lost or duplicated event cannot
+        create a phantom record. With `only_if_pending` the transition is also
+        once-only: a late or replayed saga event cannot drag an order that is
+        already CONFIRMED back to REJECTED.
+        """
         expression = "SET #s = :s, updatedAt = :u"
         names = {"#s": "status"}
         values = {":s": status.value, ":u": utcnow().isoformat()}
@@ -111,15 +125,24 @@ class OrderRepository:
             expression += ", statusReason = :r"
             values[":r"] = reason
 
+        condition = "attribute_exists(orderId)"
+        if only_if_pending:
+            condition += " AND #s = :pending"
+            values[":pending"] = OrderStatus.PENDING.value
+
         try:
             response = self.table.update_item(
                 Key={"orderId": order_id},
                 UpdateExpression=expression,
                 ExpressionAttributeNames=names,
                 ExpressionAttributeValues=values,
-                ConditionExpression="attribute_exists(orderId)",
+                ConditionExpression=condition,
                 ReturnValues="ALL_NEW",
             )
         except self.table.meta.client.exceptions.ConditionalCheckFailedException as exc:
+            # The condition covers two distinct causes; tell them apart so the
+            # consumer can ack a duplicate but retry a genuinely missing order.
+            if only_if_pending and self.get(order_id) is not None:
+                raise OrderNotPending(order_id) from exc
             raise OrderNotFound(order_id) from exc
         return _from_item(response["Attributes"])
