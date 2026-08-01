@@ -63,11 +63,19 @@ itself never matched a route.
 
 ## 3. Build and push ARM64 images
 
+**The build context is `services/`, not the service directory** — every image
+copies the shared `srx_common` package, which lives outside the service folder.
+Use `-f` and pass `services/` as the context, or the build fails on the COPY.
+
 ```bash
-ECR=$(aws ecr get-authorization-token --region eu-west-1 --query 'authorizationData[0].proxyEndpoint' --output text)
-aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin "${ECR#https://}"
-docker buildx build --platform linux/arm64 -t <ecr-url>/smartretailx/order-service:v0.2.0 --push services/order-service
-docker buildx build --platform linux/arm64 -t <ecr-url>/smartretailx/user-service:v0.2.0 --push services/user-service
+ACCOUNT=322551984077
+REGISTRY=$ACCOUNT.dkr.ecr.eu-west-1.amazonaws.com
+aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin $REGISTRY
+for svc in user order inventory product; do
+  docker buildx build --platform linux/arm64 \
+    -f services/$svc-service/Dockerfile \
+    -t $REGISTRY/smartretailx/$svc-service:v0.2.0 --push services/
+done
 ```
 
 - [ ] Tags are immutable — bump `image_tag` rather than reusing `v0.1.0`.
