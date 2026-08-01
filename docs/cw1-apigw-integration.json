@@ -1,0 +1,14 @@
+{
+    "Items": [
+        {
+            "ConnectionId": "cjz0c4",
+            "ConnectionType": "VPC_LINK",
+            "IntegrationId": "oubkbuk",
+            "IntegrationMethod": "ANY",
+            "IntegrationType": "HTTP_PROXY",
+            "IntegrationUri": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:listener/app/smartretailx-alb/9d42d6baf4cb3242/246e3c781fbe2b7f",
+            "PayloadFormatVersion": "1.0",
+            "TimeoutInMillis": 30000
+        }
+    ]
+}

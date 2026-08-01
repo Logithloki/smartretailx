@@ -201,6 +201,16 @@ resource "aws_apigatewayv2_integration" "alb" {
   integration_uri    = aws_lb_listener.http[0].arn
   connection_type    = "VPC_LINK"
   connection_id      = aws_apigatewayv2_vpc_link.main.id
+
+  # CW-1 defect: every /v1/* call reached the ALB but fell through to the
+  # default 404. A private integration's URI is a listener ARN, which has no
+  # path component, so API Gateway does not forward the original path unless
+  # told to. `overwrite:path` is the only key that sets the backend path;
+  # $request.path is the full request path minus the stage name.
+  # Ref: docs.aws.amazon.com/apigateway/latest/developerguide/http-api-parameter-mapping.html
+  request_parameters = {
+    "overwrite:path" = "$request.path"
+  }
 }
 
 locals {
@@ -442,16 +452,21 @@ resource "aws_apigatewayv2_stage" "default" {
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_access.arn
+    # `path` and `integrationStatus` were added after CW-1: without the path
+    # in the log there was no way to tell a routing fault from a backend fault
+    # without re-running the request.
     format = jsonencode({
-      requestId        = "$context.requestId"
-      ip               = "$context.identity.sourceIp"
-      requestTime      = "$context.requestTime"
-      httpMethod       = "$context.httpMethod"
-      routeKey         = "$context.routeKey"
-      status           = "$context.status"
-      responseLatency  = "$context.responseLatency"
-      integrationError = "$context.integrationErrorMessage"
-      authorizerError  = "$context.authorizer.error"
+      requestId         = "$context.requestId"
+      ip                = "$context.identity.sourceIp"
+      requestTime       = "$context.requestTime"
+      httpMethod        = "$context.httpMethod"
+      path              = "$context.path"
+      routeKey          = "$context.routeKey"
+      status            = "$context.status"
+      integrationStatus = "$context.integrationStatus"
+      responseLatency   = "$context.responseLatency"
+      integrationError  = "$context.integrationErrorMessage"
+      authorizerError   = "$context.authorizer.error"
     })
   }
 
