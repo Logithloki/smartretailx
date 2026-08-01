@@ -21,7 +21,7 @@ API="${API%/}" # $default stage invoke_url carries a trailing slash
 TOKEN="${SRX_TOKEN:-}"
 if [[ -z "$TOKEN" ]]; then
   : "${SRX_TEST_PASSWORD:?Set SRX_TEST_PASSWORD, or pre-set SRX_TOKEN}"
-  TOKEN="$(./scripts/get-jwt.sh "${SRX_USER:-customer@smartretailx.test}")"
+  TOKEN="$(./scripts/get-jwt.sh "${SRX_USER:-customer@example.com}")"
 fi
 
 code() { # method path -> status code
