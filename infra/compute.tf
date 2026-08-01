@@ -223,6 +223,212 @@ resource "aws_apigatewayv2_route" "services" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+locals {
+  # Every service validates the Cognito JWT itself (fail-closed): the HTTP API
+  # authorizer checks signature and audience, middleware checks cognito:groups.
+  common_environment = {
+    ENV                   = "production"
+    APP_REGION            = var.aws_region
+    COGNITO_USER_POOL_ID  = aws_cognito_user_pool.main.id
+    COGNITO_APP_CLIENT_ID = aws_cognito_user_pool_client.spa.id
+    COGNITO_ISSUER        = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
+    LOG_LEVEL             = "INFO"
+  }
+
+  services = {
+    order = {
+      task_role_arn = aws_iam_role.order_task.arn
+      environment = {
+        ORDERS_TABLE_NAME      = aws_dynamodb_table.orders.name
+        IDEMPOTENCY_TABLE_NAME = aws_dynamodb_table.idempotency.name
+        ORDERS_QUEUE_URL       = aws_sqs_queue.orders.url
+      }
+      secrets = {}
+    }
+
+    inventory = {
+      task_role_arn = aws_iam_role.inventory_task.arn
+      environment = {
+        ORDERS_QUEUE_URL = aws_sqs_queue.orders.url
+        SNS_TOPIC_ARN    = aws_sns_topic.order_confirmed.arn
+        DB_HOST          = aws_rds_cluster.inventory.endpoint
+        DB_NAME          = aws_rds_cluster.inventory.database_name
+        DB_USER          = aws_rds_cluster.inventory.master_username
+      }
+      # Password is pulled from the RDS-managed secret at task start —
+      # it never appears in the task definition, state, or an env var value.
+      secrets = {
+        DB_PASSWORD = "${aws_rds_cluster.inventory.master_user_secret[0].secret_arn}:password::"
+      }
+    }
+
+    user = {
+      task_role_arn = aws_iam_role.user_task.arn
+      environment   = {}
+      secrets       = {}
+    }
+
+    product = {
+      task_role_arn = aws_iam_role.product_task.arn
+      environment = {
+        PRODUCTS_TABLE_NAME = aws_dynamodb_table.products.name
+        CACHE_TTL_SECONDS   = "30"
+      }
+      secrets = {}
+    }
+  }
+}
+
+# ─── TASK DEFINITIONS — ARM64 Graviton (ADR-08, −20% compute) ─
+resource "aws_ecs_task_definition" "services" {
+  for_each = local.services
+
+  family                   = "${var.project_name}-${each.key}"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = each.value.task_role_arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
+  container_definitions = jsonencode([{
+    name      = "${each.key}-service"
+    image     = "${aws_ecr_repository.services["${each.key}-service"].repository_url}:${var.image_tag}"
+    essential = true
+
+    portMappings = [{
+      containerPort = 8000
+      protocol      = "tcp"
+    }]
+
+    environment = [
+      for k, v in merge(
+        local.common_environment,
+        { POWERTOOLS_SERVICE_NAME = "${each.key}-service" },
+        each.value.environment
+      ) : { name = k, value = tostring(v) }
+    ]
+
+    secrets = [
+      for k, v in each.value.secrets : { name = k, valueFrom = v }
+    ]
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.services[each.key].name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "ecs"
+      }
+    }
+  }])
+
+  tags = {
+    Name = "${var.project_name}-${each.key}-task"
+  }
+}
+
+# ─── ECS SERVICES — desired count gated on `live` ─────────────
+# depends_on the gated egress route so tasks never start before NAT exists
+# on unpark (amendment 22 — otherwise the first image pull fails).
+# NOTE: when Application Auto Scaling attaches in Week 7, add
+#   lifecycle { ignore_changes = [desired_count] }
+# here and park via the appautoscaling target's min_capacity instead.
+resource "aws_ecs_service" "services" {
+  for_each = local.services
+
+  name            = "${var.project_name}-${each.key}-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.services[each.key].arn
+  desired_count   = var.live ? var.service_desired_count : 0
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = aws_subnet.private[*].id
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = false
+  }
+
+  # ECS rejects a target group that has no load balancer, so the attachment
+  # follows the same gate as the ALB itself.
+  dynamic "load_balancer" {
+    for_each = var.live ? [1] : []
+    content {
+      target_group_arn = aws_lb_target_group.services[each.key].arn
+      container_name   = "${each.key}-service"
+      container_port   = 8000
+    }
+  }
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  depends_on = [aws_route.private_egress]
+
+  tags = {
+    Name = "${var.project_name}-${each.key}-service"
+  }
+}
+
+# ─── EVENTBRIDGE SCHEDULER — nightly park / morning restore ───
+# Created DISABLED; enable from Week 4 as a safety net for a forgotten park.
+# Timezone is explicit: the default is UTC, which would fire 00:00 at 05:30
+# local (amendment 24).
+resource "aws_scheduler_schedule" "park" {
+  for_each = local.services
+
+  name                         = "${var.project_name}-park-${each.key}"
+  description                  = "Scale ${each.key} to 0 tasks overnight"
+  state                        = "DISABLED"
+  schedule_expression          = "cron(0 0 * * ? *)"
+  schedule_expression_timezone = "Asia/Colombo"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = "arn:aws:scheduler:::aws-sdk:ecs:updateService"
+    role_arn = aws_iam_role.scheduler.arn
+    input = jsonencode({
+      Cluster      = aws_ecs_cluster.main.name
+      Service      = "${var.project_name}-${each.key}-service"
+      DesiredCount = 0
+    })
+  }
+}
+
+resource "aws_scheduler_schedule" "restore" {
+  for_each = local.services
+
+  name                         = "${var.project_name}-restore-${each.key}"
+  description                  = "Scale ${each.key} back up in the morning"
+  state                        = "DISABLED"
+  schedule_expression          = "cron(0 8 * * ? *)"
+  schedule_expression_timezone = "Asia/Colombo"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = "arn:aws:scheduler:::aws-sdk:ecs:updateService"
+    role_arn = aws_iam_role.scheduler.arn
+    input = jsonencode({
+      Cluster      = aws_ecs_cluster.main.name
+      Service      = "${var.project_name}-${each.key}-service"
+      DesiredCount = 1
+    })
+  }
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.main.id
   name        = "$default"

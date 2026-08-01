@@ -229,6 +229,43 @@ resource "aws_iam_role_policy" "product_task" {
   })
 }
 
+# EventBridge Scheduler: may only change the desired count of this
+# project's four services, nothing else in ECS.
+data "aws_iam_policy_document" "scheduler_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+resource "aws_iam_role" "scheduler" {
+  name               = "${var.project_name}-scheduler"
+  assume_role_policy = data.aws_iam_policy_document.scheduler_assume.json
+}
+
+resource "aws_iam_role_policy" "scheduler" {
+  role = aws_iam_role.scheduler.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["ecs:UpdateService"]
+      Resource = [
+        for name, _ in local.services :
+        "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${var.project_name}-cluster/${var.project_name}-${name}-service"
+      ]
+    }]
+  })
+}
+
 # ─── COGNITO — the ONLY user pool (backlog item 2) ────────────
 # Defined exclusively in Terraform; the Week-1 console-created pool is gone.
 # Free tier covers this demo's MAU, so it is not gated on `live`.
