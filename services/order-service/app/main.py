@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from srx_common import Authenticator, Principal, configure_logging, set_correlation_id
 
 from .config import Settings, get_settings
 from .events import OrderCommandPublisher
+from .idempotency import (
+    IdempotencyConflict,
+    IdempotencyInProgress,
+    IdempotencyStore,
+    fingerprint,
+)
 from .models import (
     CreateOrderRequest,
     HealthResponse,
@@ -24,12 +30,14 @@ def create_app(
     settings: Settings | None = None,
     repository: OrderRepository | None = None,
     publisher: OrderCommandPublisher | None = None,
+    idempotency: IdempotencyStore | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.service_name, settings.log_level)
 
     repo = repository or OrderRepository(settings)
     events = publisher or OrderCommandPublisher(settings)
+    keys = idempotency or IdempotencyStore(settings)
     auth = Authenticator(settings)
 
     app = FastAPI(
@@ -50,23 +58,60 @@ def create_app(
     )
     def create_order(
         payload: CreateOrderRequest,
+        response: Response,
         user: Principal = Depends(auth.current_user),
+        idempotency_key: str | None = Header(None, alias="Idempotency-Key", max_length=200),
     ) -> Order:
         """Write PENDING to DynamoDB, then publish the reservation command.
 
         The write comes first deliberately: if the publish fails the order
         still exists and can be retried or reconciled, whereas publishing
         first could reserve stock for an order that was never persisted.
+
+        Idempotency-Key is optional but honoured when supplied.
         """
         correlation_id = set_correlation_id()
+        payload_hash = fingerprint(payload.model_dump(mode="json"))
+
+        if idempotency_key:
+            try:
+                replay = keys.claim(user.subject, idempotency_key, payload_hash)
+            except IdempotencyConflict:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Idempotency-Key was already used with a different request body",
+                ) from None
+            except IdempotencyInProgress:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="a request with this Idempotency-Key is already in flight",
+                ) from None
+
+            if replay is not None:
+                existing = repo.get(replay.orderId)
+                if existing is not None:
+                    response.status_code = status.HTTP_200_OK
+                    response.headers["Idempotent-Replay"] = "true"
+                    return existing
 
         order = Order(
             userId=user.subject,
             items=payload.items,
             totalAmount=Order.total_for(payload.items),
         )
-        repo.put(order)
-        events.publish_order_created(order, correlation_id=correlation_id)
+
+        try:
+            repo.put(order)
+            events.publish_order_created(order, correlation_id=correlation_id)
+        except Exception:
+            # Never leave a claimed key behind on failure, or the customer's
+            # honest retry is met with 409 forever.
+            if idempotency_key:
+                keys.release(user.subject, idempotency_key)
+            raise
+
+        if idempotency_key:
+            keys.complete(user.subject, idempotency_key, order.orderId)
 
         logger.info(
             "order accepted",
