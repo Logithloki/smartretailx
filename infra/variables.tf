@@ -65,3 +65,15 @@ variable "cors_allow_origins" {
   type        = list(string)
   default     = ["http://localhost:5173"]
 }
+
+variable "image_tag" {
+  description = "Container image tag the task definitions point at (ECR tags are IMMUTABLE, so bump this per release)"
+  type        = string
+  default     = "v0.1.0"
+}
+
+variable "service_desired_count" {
+  description = "Tasks per service when live. Stays 0 until Week 2 pushes real images to ECR - a live service pointing at an absent image would just churn failed pulls."
+  type        = number
+  default     = 0
+}

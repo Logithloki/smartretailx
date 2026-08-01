@@ -10,6 +10,17 @@ resource "aws_cloudwatch_log_group" "api_access" {
   }
 }
 
+resource "aws_cloudwatch_log_group" "services" {
+  for_each = local.services
+
+  name              = "/ecs/${var.project_name}-${each.key}"
+  retention_in_days = 7
+
+  tags = {
+    Name = "${var.project_name}-${each.key}-logs"
+  }
+}
+
 # ─── ALERTING ─────────────────────────────────────────────────
 # Subscribe your email to this topic manually once (subscription requires
 # an email-click confirmation Terraform cannot perform):
@@ -46,5 +57,31 @@ resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
 
   tags = {
     Name = "${var.project_name}-orders-dlq-depth"
+  }
+}
+
+# Backlog >100 means consumers cannot keep up — the signal that triggers the
+# autoscaling discussion in the testing week.
+resource "aws_cloudwatch_metric_alarm" "orders_queue_depth" {
+  alarm_name          = "${var.project_name}-orders-queue-depth"
+  alarm_description   = "Orders queue backlog above 100 - inventory consumer is falling behind"
+  namespace           = "AWS/SQS"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 100
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.orders.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
+  tags = {
+    Name = "${var.project_name}-orders-queue-depth"
   }
 }
