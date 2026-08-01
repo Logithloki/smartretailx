@@ -1,3 +1,15 @@
+# ─── LOGS ─────────────────────────────────────────────────────
+# Short retention keeps parked cost near zero; the report notes 30-90 days
+# as the production setting.
+resource "aws_cloudwatch_log_group" "api_access" {
+  name              = "/aws/apigateway/${var.project_name}"
+  retention_in_days = 7
+
+  tags = {
+    Name = "${var.project_name}-api-access-logs"
+  }
+}
+
 # ─── ALERTING ─────────────────────────────────────────────────
 # Subscribe your email to this topic manually once (subscription requires
 # an email-click confirmation Terraform cannot perform):

@@ -185,11 +185,27 @@ resource "aws_iam_role_policy" "inventory_task" {
   })
 }
 
-# User Service: cognito-idp admin APIs — policy is added in Week 1 Day 4
-# together with the Terraform user pool (no pool exists to reference yet).
+# User Service: cognito-idp admin APIs scoped to this pool only.
 resource "aws_iam_role" "user_task" {
   name               = "${var.project_name}-user-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+}
+
+resource "aws_iam_role_policy" "user_task" {
+  role = aws_iam_role.user_task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminUpdateUserAttributes",
+        "cognito-idp:AdminListGroupsForUser",
+        "cognito-idp:ListUsers"
+      ]
+      Resource = [aws_cognito_user_pool.main.arn]
+    }]
+  })
 }
 
 # Product Service: read-only on products table + its GSI.
@@ -211,4 +227,97 @@ resource "aws_iam_role_policy" "product_task" {
       ]
     }]
   })
+}
+
+# ─── COGNITO — the ONLY user pool (backlog item 2) ────────────
+# Defined exclusively in Terraform; the Week-1 console-created pool is gone.
+# Free tier covers this demo's MAU, so it is not gated on `live`.
+
+resource "aws_cognito_user_pool" "main" {
+  name = "${var.project_name}-users"
+
+  username_attributes      = ["email"]
+  auto_verified_attributes = ["email"]
+
+  # MFA is OFF for the demo; report documents it as a one-flag scale-up
+  # (production practices at demo sizing — lecturer ruling).
+  password_policy {
+    minimum_length    = 12
+    require_lowercase = true
+    require_uppercase = true
+    require_numbers   = true
+    require_symbols   = true
+  }
+
+  account_recovery_setting {
+    recovery_mechanism {
+      name     = "verified_email"
+      priority = 1
+    }
+  }
+
+  admin_create_user_config {
+    allow_admin_create_user_only = false # customers self-register (UI scope H.2)
+  }
+
+  tags = {
+    Name = "${var.project_name}-users"
+  }
+}
+
+# Hosted UI needs a domain or the login page simply does not exist
+# (backlog item 19). Prefix must be globally unique.
+resource "aws_cognito_user_pool_domain" "main" {
+  domain       = "${var.project_name}-${data.aws_caller_identity.current.account_id}"
+  user_pool_id = aws_cognito_user_pool.main.id
+}
+
+# Public SPA client: authorization-code + PKCE, no secret to leak in a browser.
+resource "aws_cognito_user_pool_client" "spa" {
+  name         = "${var.project_name}-spa"
+  user_pool_id = aws_cognito_user_pool.main.id
+
+  generate_secret = false
+
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_scopes                 = ["openid", "email", "profile"]
+  supported_identity_providers         = ["COGNITO"]
+
+  callback_urls = var.frontend_callback_urls
+  logout_urls   = var.frontend_logout_urls
+
+  explicit_auth_flows = [
+    "ALLOW_USER_SRP_AUTH",
+    "ALLOW_ADMIN_USER_PASSWORD_AUTH", # scripts/get-jwt.sh for CW smoke tests
+    "ALLOW_REFRESH_TOKEN_AUTH"
+  ]
+
+  access_token_validity  = 60
+  id_token_validity      = 60
+  refresh_token_validity = 30
+
+  token_validity_units {
+    access_token  = "minutes"
+    id_token      = "minutes"
+    refresh_token = "days"
+  }
+
+  prevent_user_existence_errors = "ENABLED"
+}
+
+# RBAC groups. The HTTP API JWT authorizer validates signature/claims only —
+# the `cognito:groups` claim is enforced in each service's middleware.
+resource "aws_cognito_user_group" "admin" {
+  name         = "admin"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "Product CRUD and stock adjustment"
+  precedence   = 1
+}
+
+resource "aws_cognito_user_group" "customer" {
+  name         = "customer"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "Browse products, place and view own orders"
+  precedence   = 10
 }
