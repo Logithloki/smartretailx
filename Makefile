@@ -16,11 +16,15 @@ reset:
 build:
 	docker compose build --no-cache
 
+SERVICES := common user-service order-service inventory-service product-service
+
 test:
-	cd services/order-service && pytest tests/ -v
-	cd services/inventory-service && pytest tests/ -v
-	cd services/user-service && pytest tests/ -v
-	cd services/product-service && pytest tests/ -v
+	@for s in $(SERVICES); do \
+	  if [ -d "services/$$s/tests" ]; then \
+	    echo "===== $$s ====="; \
+	    (cd "services/$$s" && python -m pytest) || exit 1; \
+	  fi; \
+	done
 
 deploy:
 	cd infra && terraform init && terraform apply
