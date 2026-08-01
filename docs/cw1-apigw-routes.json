@@ -1,0 +1,68 @@
+{
+    "Items": [
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "gl8mvi",
+            "RouteId": "270a0na",
+            "RouteKey": "ANY /v1/orders/{proxy+}",
+            "Target": "integrations/oubkbuk"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "gl8mvi",
+            "RouteId": "48n3ekl",
+            "RouteKey": "ANY /v1/users/{proxy+}",
+            "Target": "integrations/oubkbuk"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "gl8mvi",
+            "RouteId": "55lqti6",
+            "RouteKey": "ANY /v1/orders",
+            "Target": "integrations/oubkbuk"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "gl8mvi",
+            "RouteId": "8aktlmi",
+            "RouteKey": "ANY /v1/products",
+            "Target": "integrations/oubkbuk"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "gl8mvi",
+            "RouteId": "d44fn6q",
+            "RouteKey": "ANY /v1/users",
+            "Target": "integrations/oubkbuk"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "gl8mvi",
+            "RouteId": "e20r87u",
+            "RouteKey": "ANY /v1/inventory",
+            "Target": "integrations/oubkbuk"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "gl8mvi",
+            "RouteId": "tiogo44",
+            "RouteKey": "ANY /v1/products/{proxy+}",
+            "Target": "integrations/oubkbuk"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "JWT",
+            "AuthorizerId": "gl8mvi",
+            "RouteId": "v39p35k",
+            "RouteKey": "ANY /v1/inventory/{proxy+}",
+            "Target": "integrations/oubkbuk"
+        }
+    ]
+}

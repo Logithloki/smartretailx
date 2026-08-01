@@ -69,7 +69,8 @@ API=$(terraform -chdir=infra output -raw api_endpoint)
 ## 7. Park
 
 - [ ] `terraform apply -var="live=false"` — expect **18 to destroy**: NAT, EIP, egress route, ALB, listener, 4 listener rules, API integration, 8 routes.
-      *Watch for:* Terraform may want to **replace** the four ECS services when the `load_balancer` block drops. That is expected and harmless (seconds, free).
+      *Resolved after CW-1:* the four ECS services are **updated in place**, not replaced, when the
+      `load_balancer` block drops — confirmed against real state. No service churn on park.
 - [ ] Console check: **no NAT Gateway**, **no load balancer**, EIP released → **`19c-parked.png`**.
 - [ ] Confirm Aurora shows 0 ACU / paused.
 

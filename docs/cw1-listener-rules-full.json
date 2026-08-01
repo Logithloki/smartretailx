@@ -1,0 +1,170 @@
+{
+    "Rules": [
+        {
+            "RuleArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:listener-rule/app/smartretailx-alb/9d42d6baf4cb3242/246e3c781fbe2b7f/58a15053b70df544",
+            "Priority": "10",
+            "Conditions": [
+                {
+                    "Field": "path-pattern",
+                    "Values": [
+                        "/v1/orders*"
+                    ],
+                    "PathPatternConfig": {
+                        "Values": [
+                            "/v1/orders*"
+                        ]
+                    }
+                }
+            ],
+            "Actions": [
+                {
+                    "Type": "forward",
+                    "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:targetgroup/smartretailx-order-tg/693264f693833657",
+                    "Order": 1,
+                    "ForwardConfig": {
+                        "TargetGroups": [
+                            {
+                                "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:targetgroup/smartretailx-order-tg/693264f693833657",
+                                "Weight": 1
+                            }
+                        ],
+                        "TargetGroupStickinessConfig": {
+                            "Enabled": false
+                        }
+                    }
+                }
+            ],
+            "IsDefault": false,
+            "Transforms": []
+        },
+        {
+            "RuleArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:listener-rule/app/smartretailx-alb/9d42d6baf4cb3242/246e3c781fbe2b7f/160f6b6d916101da",
+            "Priority": "20",
+            "Conditions": [
+                {
+                    "Field": "path-pattern",
+                    "Values": [
+                        "/v1/inventory*"
+                    ],
+                    "PathPatternConfig": {
+                        "Values": [
+                            "/v1/inventory*"
+                        ]
+                    }
+                }
+            ],
+            "Actions": [
+                {
+                    "Type": "forward",
+                    "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:targetgroup/smartretailx-inventory-tg/e5bda9057dad840f",
+                    "Order": 1,
+                    "ForwardConfig": {
+                        "TargetGroups": [
+                            {
+                                "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:targetgroup/smartretailx-inventory-tg/e5bda9057dad840f",
+                                "Weight": 1
+                            }
+                        ],
+                        "TargetGroupStickinessConfig": {
+                            "Enabled": false
+                        }
+                    }
+                }
+            ],
+            "IsDefault": false,
+            "Transforms": []
+        },
+        {
+            "RuleArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:listener-rule/app/smartretailx-alb/9d42d6baf4cb3242/246e3c781fbe2b7f/121e493f7849c9c3",
+            "Priority": "30",
+            "Conditions": [
+                {
+                    "Field": "path-pattern",
+                    "Values": [
+                        "/v1/users*"
+                    ],
+                    "PathPatternConfig": {
+                        "Values": [
+                            "/v1/users*"
+                        ]
+                    }
+                }
+            ],
+            "Actions": [
+                {
+                    "Type": "forward",
+                    "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:targetgroup/smartretailx-user-tg/b2b6744a64aedd5b",
+                    "Order": 1,
+                    "ForwardConfig": {
+                        "TargetGroups": [
+                            {
+                                "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:targetgroup/smartretailx-user-tg/b2b6744a64aedd5b",
+                                "Weight": 1
+                            }
+                        ],
+                        "TargetGroupStickinessConfig": {
+                            "Enabled": false
+                        }
+                    }
+                }
+            ],
+            "IsDefault": false,
+            "Transforms": []
+        },
+        {
+            "RuleArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:listener-rule/app/smartretailx-alb/9d42d6baf4cb3242/246e3c781fbe2b7f/91095309b4f73980",
+            "Priority": "40",
+            "Conditions": [
+                {
+                    "Field": "path-pattern",
+                    "Values": [
+                        "/v1/products*"
+                    ],
+                    "PathPatternConfig": {
+                        "Values": [
+                            "/v1/products*"
+                        ]
+                    }
+                }
+            ],
+            "Actions": [
+                {
+                    "Type": "forward",
+                    "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:targetgroup/smartretailx-product-tg/33cd8b1cb949f462",
+                    "Order": 1,
+                    "ForwardConfig": {
+                        "TargetGroups": [
+                            {
+                                "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:targetgroup/smartretailx-product-tg/33cd8b1cb949f462",
+                                "Weight": 1
+                            }
+                        ],
+                        "TargetGroupStickinessConfig": {
+                            "Enabled": false
+                        }
+                    }
+                }
+            ],
+            "IsDefault": false,
+            "Transforms": []
+        },
+        {
+            "RuleArn": "arn:aws:elasticloadbalancing:eu-west-1:322551984077:listener-rule/app/smartretailx-alb/9d42d6baf4cb3242/246e3c781fbe2b7f/bc27eb1946a651b3",
+            "Priority": "default",
+            "Conditions": [],
+            "Actions": [
+                {
+                    "Type": "fixed-response",
+                    "Order": 1,
+                    "FixedResponseConfig": {
+                        "MessageBody": "{\"error\":\"route not found\"}",
+                        "StatusCode": "404",
+                        "ContentType": "application/json"
+                    }
+                }
+            ],
+            "IsDefault": true,
+            "Transforms": []
+        }
+    ]
+}
