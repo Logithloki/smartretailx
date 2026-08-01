@@ -79,18 +79,18 @@ services:
       postgres:
         condition: service_healthy
 
-  # product-service:
-  #   build:
-  #     context: ./services
-  #     dockerfile: product-service/Dockerfile
-  #   container_name: smartretailx-product-service
-  #   ports:
-  #     - "8004:8000"
-  #   env_file:
-  #     - ./services/product-service/.env.local
-  #   depends_on:
-  #     localstack:
-  #       condition: service_healthy
+  product-service:
+    build:
+      context: ./services
+      dockerfile: product-service/Dockerfile
+    container_name: smartretailx-product-service
+    ports:
+      - "8004:8000"
+    env_file:
+      - ./services/product-service/.env.local
+    depends_on:
+      localstack:
+        condition: service_healthy
 
 volumes:
   localstack_data:
