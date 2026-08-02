@@ -252,6 +252,11 @@ locals {
         ORDERS_TABLE_NAME      = aws_dynamodb_table.orders.name
         IDEMPOTENCY_TABLE_NAME = aws_dynamodb_table.idempotency.name
         ORDERS_QUEUE_URL       = aws_sqs_queue.orders.url
+        # Saga outcome receiver. Without these two the order is placed and the
+        # command published, but nothing ever moves it out of PENDING - the
+        # consumer thread simply never starts.
+        ORDER_EVENTS_QUEUE_URL        = aws_sqs_queue.order_events.url
+        COMPENSATION_CONSUMER_ENABLED = "true"
       }
       secrets = {}
     }
@@ -261,9 +266,14 @@ locals {
       environment = {
         ORDERS_QUEUE_URL = aws_sqs_queue.orders.url
         SNS_TOPIC_ARN    = aws_sns_topic.order_confirmed.arn
+        # Without this the queue fills and no order is ever decided.
+        CONSUMER_ENABLED = "true"
         DB_HOST          = aws_rds_cluster.inventory.endpoint
-        DB_NAME          = aws_rds_cluster.inventory.database_name
-        DB_USER          = aws_rds_cluster.inventory.master_username
+        # Derived rather than relying on the app default happening to match
+        # Aurora's port.
+        DB_PORT = tostring(aws_rds_cluster.inventory.port)
+        DB_NAME = aws_rds_cluster.inventory.database_name
+        DB_USER = aws_rds_cluster.inventory.master_username
       }
       # Password is pulled from the RDS-managed secret at task start —
       # it never appears in the task definition, state, or an env var value.
