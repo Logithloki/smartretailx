@@ -73,7 +73,7 @@ variable "image_tag" {
 }
 
 variable "service_desired_count" {
-  description = "Tasks per service when live. Stays 0 until Week 2 pushes real images to ECR - a live service pointing at an absent image would just churn failed pulls."
+  description = "Tasks per service when live. Stays 0 until Week 2 pushes real images to ECR - a live service pointing at an absent image churns failed pulls and trips the deployment circuit breaker. Guide correction GC-2, see docs/guide-corrections.md."
   type        = number
   default     = 0
 }

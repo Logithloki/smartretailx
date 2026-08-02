@@ -112,6 +112,19 @@ Corruption: PITR, RPO ≈ 5 min · Region loss: RTO 30–45 min / RPO ≤ 1 h (t
 9. Buffer + two timed rehearsals; submit ~2 days early. Viva day: apply live=true in the
    morning, pre-warm Aurora 15 min before demo, park after
 
+## Guide corrections (defects found in IMPLEMENTATION-GUIDE.md while executing it)
+Recorded in `docs/guide-corrections.md` and fixed in the guide text itself. These are
+corrections, not workarounds — following the original wording would have broken the system.
+- **GC-1** order-events SNS filter must be `["order-confirmed","order-rejected"]`, not
+  rejected-only: that queue is the only route out of PENDING, so a rejected-only filter
+  strands every successful order (and contradicts the guide's own W3 D5 gate)
+- **GC-2** ECS `desired_count = var.live ? var.service_desired_count : 0` (default 0), not
+  `? 1 : 0`: at CW-1 the image tags do not exist yet, so 1 trips the deployment circuit breaker
+- **IC-1** test users on `@example.com`, not `@smartretailx.test` — `.test` is RFC 2606
+  special-use and `email-validator` rejects it (self-inflicted, not a guide defect)
+Cite the correction ID in the report's methodology section; expect a viva question on why
+the code and the plan differ.
+
 ## Conventions
 - Python 3.12, FastAPI, pytest + moto for unit tests, httpx for API tests
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`)

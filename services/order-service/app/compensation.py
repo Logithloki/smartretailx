@@ -9,10 +9,9 @@ Two events matter here:
   order-confirmed  -> PENDING becomes CONFIRMED
   order-rejected   -> PENDING becomes REJECTED  (the compensating action)
 
-Note on the subscription filter: the guide's Week 2 text filters on
-order-rejected alone, because at that point the publisher did not exist yet.
-Nothing else in the design moves an order to CONFIRMED, so the queue subscribes
-to both event types - otherwise the Week 3 Day 5 saga demo cannot complete.
+The queue subscribes to both event types (guide correction GC-1): this consumer
+is the ONLY thing that moves an order out of PENDING in either direction, so a
+rejected-only filter would leave every successful order pending forever.
 """
 
 from __future__ import annotations
