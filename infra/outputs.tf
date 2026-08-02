@@ -70,6 +70,16 @@ output "orders_event_bus_name" {
   value       = aws_cloudwatch_event_bus.orders.name
 }
 
+output "websocket_api_id" {
+  description = "WebSocket API v2 ID"
+  value       = aws_apigatewayv2_api.ws.id
+}
+
+output "websocket_endpoint" {
+  description = "WebSocket URL (null when parked). Clients connect wss://.../prod?token=<JWT>"
+  value       = one(aws_apigatewayv2_stage.ws[*].invoke_url)
+}
+
 output "alerts_topic_arn" {
   description = "SNS alerts topic ARN (subscribe your email manually)"
   value       = aws_sns_topic.alerts.arn
