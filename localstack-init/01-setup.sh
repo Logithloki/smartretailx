@@ -61,9 +61,10 @@ TOPIC_ARN=$(awslocal sns create-topic \
   --name smartretailx-order-confirmed \
   --region eu-west-1 --query TopicArn --output text)
 
-# Saga compensation receiver: the Order Service consumes outcomes from here.
-# Both event types are subscribed - order-rejected drives compensation and
-# order-confirmed completes the happy path.
+# Saga outcome receiver: the Order Service consumes outcomes from here.
+# Both event types are subscribed (guide correction GC-1) - order-rejected
+# drives compensation, order-confirmed completes the happy path. This queue is
+# the only route by which an order leaves PENDING.
 awslocal sns subscribe \
   --topic-arn "$TOPIC_ARN" \
   --protocol sqs \

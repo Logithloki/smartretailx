@@ -147,7 +147,10 @@ issuer/client; VPC Link into the private subnets with its own SG; integration �
 internal ALB listener. Add `$default` stage throttling (e.g. rate 50, burst 100).
 
 ### Day 5 — ECS services (skeleton) + Scheduler + alarms
-Four `aws_ecs_service` resources with `desired_count = var.live ? 1 : 0` and
+Four `aws_ecs_service` resources with `desired_count = var.live ? var.service_desired_count : 0`
+(**[GC-1 sibling: GC-2]** — this originally read `var.live ? 1 : 0`, which makes CW-1 pull
+image tags that do not exist yet and trips the deployment circuit breaker; the new variable
+defaults to 0 and is raised to 1 in Week 2. See `docs/guide-corrections.md`) and
 `deployment_circuit_breaker { enable = true, rollback = true }`. Task definitions with
 `runtime_platform { operating_system_family = "LINUX", cpu_architecture = "ARM64" }`
 (images arrive in Week 2 — services will show 0 running; that's fine).
@@ -184,9 +187,14 @@ Then `terraform apply -var="live=false"` → confirm NAT/ALB gone, £ ≈ 0.
 - Add `pybreaker` + `tenacity` as dependencies now (used properly in Week 3).
 - Order Service: on create → write DynamoDB (status=PENDING) → publish to SQS.
   Also subscribe an **order-events SQS queue** to the SNS topic with a filter policy
-  `{"eventType": ["order-rejected"]}` and add a small consumer thread/task that sets
-  status=REJECTED — this is the saga compensation receiver (publisher lands Week 3).
+  `{"eventType": ["order-confirmed", "order-rejected"]}` and add a small consumer
+  thread/task that applies the outcome (CONFIRMED or REJECTED) — this is the saga
+  outcome receiver, of which compensation is one half (publisher lands Week 3).
   Add the queue + subscription to `messaging.tf`.
+  **[GC-1]** This originally read `["order-rejected"]` only. Nothing else in the
+  design moves an order to CONFIRMED, so a rejected-only filter leaves every
+  successful order PENDING forever and contradicts the Week 3 D5 gate below.
+  See `docs/guide-corrections.md`.
 
 Days 1–2 User Service; Days 3–5 Order Service + unit tests (moto) green in `make test`;
 both services in Compose, Swagger at `localhost:8001/docs`, `8003/docs`.

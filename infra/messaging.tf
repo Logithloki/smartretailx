@@ -38,9 +38,9 @@ resource "aws_sns_topic" "order_confirmed" {
 # Inventory announces the outcome on SNS; the Order Service consumes it here
 # and moves the order to its terminal state.
 #
-# The guide's Week 2 text filters on order-rejected alone, written before the
-# publisher existed. Nothing else in the design sets CONFIRMED, so both event
-# types are subscribed - the Week 3 Day 5 saga demo needs the confirm path too.
+# Both event types are subscribed (guide correction GC-1, docs/guide-corrections.md):
+# this queue is the only route by which an order leaves PENDING, so filtering to
+# order-rejected alone would strand every successful order.
 resource "aws_sqs_queue" "order_events" {
   name                       = "${var.project_name}-order-events"
   visibility_timeout_seconds = 30
