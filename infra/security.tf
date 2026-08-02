@@ -264,6 +264,123 @@ resource "aws_iam_role_policy" "product_task" {
   })
 }
 
+# ─── LAMBDA EXECUTION ROLES ───────────────────────────────────
+
+data "aws_iam_policy_document" "lambda_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+# Written out rather than attaching AWSLambdaBasicExecutionRole so the report's
+# least-privilege matrix shows real grants instead of a managed-policy name.
+locals {
+  lambda_logging_actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+  ]
+  # Powertools Tracer needs these; without them tracing fails silently and the
+  # service map simply has a hole where the Lambda should be.
+  lambda_xray_actions = [
+    "xray:PutTraceSegments",
+    "xray:PutTelemetryRecords",
+  ]
+}
+
+resource "aws_iam_role" "notification_lambda" {
+  name               = "${var.project_name}-notification-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "notification_lambda" {
+  role = aws_iam_role.notification_lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "Logs"
+        Effect   = "Allow"
+        Action   = local.lambda_logging_actions
+        Resource = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-notification:*"]
+      },
+      {
+        Sid      = "Tracing"
+        Effect   = "Allow"
+        Action   = local.lambda_xray_actions
+        Resource = ["*"] # X-Ray write actions do not support resource scoping
+      },
+      {
+        # Powertools Idempotency reads, writes and deletes its own records.
+        Sid    = "IdempotencyStore"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = [aws_dynamodb_table.idempotency.arn]
+      },
+      {
+        Sid      = "SendEmail"
+        Effect   = "Allow"
+        Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+        Resource = ["*"]
+        Condition = {
+          # Scopes sending to our own From address, so a compromised function
+          # cannot send as anyone else in the account.
+          StringEquals = { "ses:FromAddress" = var.ses_sender_email }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "reconciliation_lambda" {
+  name               = "${var.project_name}-reconciliation-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy" "reconciliation_lambda" {
+  role = aws_iam_role.reconciliation_lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "Logs"
+        Effect   = "Allow"
+        Action   = local.lambda_logging_actions
+        Resource = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-stock-reconciliation:*"]
+      },
+      {
+        Sid      = "Tracing"
+        Effect   = "Allow"
+        Action   = local.lambda_xray_actions
+        Resource = ["*"]
+      },
+      {
+        # Read-only on orders. Reconciliation reports anomalies; it must not be
+        # able to "fix" a financial record by rewriting it.
+        Sid      = "ScanOrders"
+        Effect   = "Allow"
+        Action   = ["dynamodb:Scan", "dynamodb:Query"]
+        Resource = [aws_dynamodb_table.orders.arn, "${aws_dynamodb_table.orders.arn}/index/*"]
+      },
+      {
+        Sid      = "RaiseAlert"
+        Effect   = "Allow"
+        Action   = ["sns:Publish"]
+        Resource = [aws_sns_topic.alerts.arn]
+      }
+    ]
+  })
+}
+
 # EventBridge Scheduler: may only change the desired count of this
 # project's four services, nothing else in ECS.
 data "aws_iam_policy_document" "scheduler_assume" {
@@ -290,14 +407,23 @@ resource "aws_iam_role_policy" "scheduler" {
   role = aws_iam_role.scheduler.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["ecs:UpdateService"]
-      Resource = [
-        for name, _ in local.services :
-        "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${var.project_name}-cluster/${var.project_name}-${name}-service"
-      ]
-    }]
+    Statement = [
+      {
+        Sid    = "ParkAndRestoreServices"
+        Effect = "Allow"
+        Action = ["ecs:UpdateService"]
+        Resource = [
+          for name, _ in local.services :
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${var.project_name}-cluster/${var.project_name}-${name}-service"
+        ]
+      },
+      {
+        Sid      = "InvokeReconciliation"
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = [aws_lambda_function.reconciliation.arn]
+      }
+    ]
   })
 }
 
