@@ -20,3 +20,8 @@ Harvard-referenced acknowledgement of AI tooling goes in the report's declaratio
 | 2026-08-03 | Claude Code | W4 D1: notification Lambda with Powertools Logger/Tracer/Idempotency, SES identity in Terraform, event-carried userEmail through the saga; 14 tests |
 | 2026-08-03 | Claude Code | W4 D2: Lambda Terraform (ARM64 + Powertools layer), SNS filter incl. loadTest exclusion, stock-reconciliation Lambda + enabled Asia/Colombo schedule, least-privilege Lambda IAM; 12 tests |
 | 2026-08-03 | Claude Code | W4 D3: Powertools formatter adopted across all four Fargate services so services and Lambdas emit one log shape; correlation id injected via logging filter |
+| 2026-08-03 | Cursor Agent | W5 chunk 1 commit 1: EventBridge Pipes — DDB Streams → orders event bus, native filter on MODIFY + terminal status, dedicated pipes IAM role; pipes.tf + outputs |
+| 2026-08-03 | Cursor Agent | W5 chunk 1 commit 2: WebSocket API v2 + REQUEST Lambda authorizer validating Cognito JWT off ?token=; authorizer Lambda (8 tests) with offline JWKS stub |
+| 2026-08-03 | Cursor Agent | W5 chunk 1 commit 3: connect / disconnect / push Lambdas — connect writes (connectionId, userId, ttl); disconnect idempotent delete; push scans by userId, prunes 410 GoneException inline, re-raises 5xx for EventBridge retries (15 tests) |
+| 2026-08-03 | Cursor Agent | W5 chunk 1 commit 4: backlog 33 IAM — PutItem / DeleteItem / Scan-Query-Delete on websocket-connections split per Lambda; execute-api:ManageConnections scoped to this WSS API's stage ARN |
+| 2026-08-03 | Cursor Agent | W5 chunk 1 commit 5: EventBridge rule + target + invoke permission — routes order.status-changed events off the bus into the push Lambda; terraform validate green |
