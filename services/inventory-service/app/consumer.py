@@ -65,9 +65,16 @@ class InventoryConsumer:
             return True
 
         user_id = event.get("userId")
+        # Carried through unchanged so the notification Lambda has a recipient.
+        passthrough = {
+            "userEmail": event.get("userEmail"),
+            "correlationId": event.get("correlationId"),
+        }
         lines = self._lines(event)
         if not lines:
-            self._publisher.order_rejected(order_id, "order contained no items", user_id)
+            self._publisher.order_rejected(
+                order_id, "order contained no items", user_id, **passthrough
+            )
             return True
 
         try:
@@ -83,11 +90,13 @@ class InventoryConsumer:
             return False
 
         if result.ok:
-            self._publisher.order_confirmed(order_id, user_id)
+            self._publisher.order_confirmed(order_id, user_id, **passthrough)
         else:
             # Compensating event: stock was never taken, so nothing to undo
             # here - the Order Service marks the order REJECTED.
-            self._publisher.order_rejected(order_id, result.reason or "rejected", user_id)
+            self._publisher.order_rejected(
+                order_id, result.reason or "rejected", user_id, **passthrough
+            )
 
         return True
 

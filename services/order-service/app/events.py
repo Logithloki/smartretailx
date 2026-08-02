@@ -35,7 +35,12 @@ class OrderCommandPublisher:
             self._client = boto3.client("sqs", **self._settings.boto_kwargs())
         return self._client
 
-    def publish_order_created(self, order: Order, correlation_id: str | None = None) -> str:
+    def publish_order_created(
+        self,
+        order: Order,
+        correlation_id: str | None = None,
+        user_email: str | None = None,
+    ) -> str:
         if not self._settings.orders_queue_url:
             raise RuntimeError("ORDERS_QUEUE_URL is not configured")
 
@@ -43,6 +48,10 @@ class OrderCommandPublisher:
             "eventType": "order-created",
             "orderId": order.orderId,
             "userId": order.userId,
+            # Event-carried state transfer: the address comes from the verified
+            # JWT here and rides the saga, so the notification Lambda never has
+            # to call Cognito to turn a sub into an email.
+            "userEmail": user_email,
             "totalAmount": order.totalAmount,
             "items": [
                 {

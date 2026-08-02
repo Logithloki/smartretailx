@@ -131,7 +131,9 @@ def create_app(
 
         try:
             repo.put(order)
-            events.publish_order_created(order, correlation_id=correlation_id)
+            events.publish_order_created(
+                order, correlation_id=correlation_id, user_email=user.email
+            )
         except Exception:
             # Never leave a claimed key behind on failure, or the customer's
             # honest retry is met with 409 forever.
