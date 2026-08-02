@@ -143,13 +143,30 @@ resource "aws_iam_role_policy" "order_task" {
     Version = "2012-10-17"
     Statement = [
       {
+        # Orders: no DeleteItem. Orders are financial records - the same
+        # reasoning that removed TTL from this table (backlog item 7) says the
+        # service should not be able to delete one either.
+        Sid    = "OrdersTable"
         Effect = "Allow"
         Action = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"]
         Resource = [
           aws_dynamodb_table.orders.arn,
-          "${aws_dynamodb_table.orders.arn}/index/*",
-          aws_dynamodb_table.idempotency.arn
+          "${aws_dynamodb_table.orders.arn}/index/*"
         ]
+      },
+      {
+        # Idempotency: DeleteItem IS required - IdempotencyStore.release()
+        # drops a claim when order creation fails, so an honest retry is not
+        # wedged at 409 forever. Query is not used, so it is not granted.
+        Sid    = "IdempotencyTable"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = [aws_dynamodb_table.idempotency.arn]
       },
       {
         Effect   = "Allow"
@@ -214,7 +231,7 @@ resource "aws_iam_role_policy" "user_task" {
   })
 }
 
-# Product Service: read-only on products table + its GSI.
+# Product Service: catalogue reads plus admin CRUD (backlog item 28).
 resource "aws_iam_role" "product_task" {
   name               = "${var.project_name}-product-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
@@ -224,14 +241,26 @@ resource "aws_iam_role_policy" "product_task" {
   role = aws_iam_role.product_task.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"]
-      Resource = [
-        aws_dynamodb_table.products.arn,
-        "${aws_dynamodb_table.products.arn}/index/*"
-      ]
-    }]
+    Statement = [
+      {
+        # Reads span the base table and the category-index GSI.
+        Sid    = "ProductReads"
+        Effect = "Allow"
+        Action = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"]
+        Resource = [
+          aws_dynamodb_table.products.arn,
+          "${aws_dynamodb_table.products.arn}/index/*"
+        ]
+      },
+      {
+        # Writes go to the base table only - a GSI cannot be written directly,
+        # so granting index/* here would be a permission that does nothing.
+        Sid      = "ProductAdminWrites"
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"]
+        Resource = [aws_dynamodb_table.products.arn]
+      }
+    ]
   })
 }
 
