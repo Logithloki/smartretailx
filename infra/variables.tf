@@ -67,10 +67,18 @@ variable "cors_allow_origins" {
 }
 
 variable "image_tag" {
-  description = "Container image tag the task definitions point at (ECR tags are IMMUTABLE, so bump this per release)"
+  description = "Container image tag the task definitions point at. ECR tags are IMMUTABLE, so bump this default in the SAME commit as the buildx push - never rely on passing -var at apply time."
   type        = string
-  default     = "v0.1.0"
+  default     = "v0.2.0"
 }
+
+# Why the default matters more than it looks: `make park` runs
+# `terraform apply -var="live=false"` with no image_tag, so the default wins and
+# is written into a fresh task-definition revision. A stale default therefore
+# silently rewrites the deployed tag on every park. That already happened once:
+# v0.2.0 was applied, a park rewrote the task defs back to v0.1.0, and v0.1.0
+# no longer exists in ECR - so the next unpark would have failed its image pull
+# and tripped the deployment circuit breaker.
 
 variable "service_desired_count" {
   description = "Tasks per service when live. Stays 0 until Week 2 pushes real images to ECR - a live service pointing at an absent image churns failed pulls and trips the deployment circuit breaker. Guide correction GC-2, see docs/guide-corrections.md."
