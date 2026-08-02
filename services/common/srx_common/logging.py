@@ -1,25 +1,26 @@
-"""Structured JSON logging with a correlation id.
+"""Structured JSON logging, shared by the four Fargate services.
 
-Week 4 swaps this for AWS Lambda Powertools in the notification Lambda, but the
-four Fargate services keep this: same JSON shape, no extra dependency, and
-CloudWatch Logs Insights can query it directly.
+Uses the Powertools formatter rather than a hand-rolled one so the services and
+the Lambdas emit the *same* log shape. That matters more than it sounds: one
+CloudWatch Logs Insights query has to span API -> SQS -> Inventory -> SNS ->
+notification Lambda, and it can only do that if every hop spells the fields the
+same way.
+
+Powertools' own Logger is built around the Lambda handler decorator, which does
+not fit a long-running uvicorn process, so the formatter is attached to the
+standard library root logger instead. Service code keeps using plain
+`logger.info(...)` and `extra={...}` - no Powertools import anywhere else.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from contextvars import ContextVar
 
-_correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+from aws_lambda_powertools.logging.formatter import LambdaPowertoolsFormatter
 
-_RESERVED = {
-    "args", "asctime", "created", "exc_info", "exc_text", "filename", "funcName",
-    "levelname", "levelno", "lineno", "module", "msecs", "message", "msg", "name",
-    "pathname", "process", "processName", "relativeCreated", "stack_info",
-    "thread", "threadName", "taskName",
-}
+_correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
 
 def set_correlation_id(value: str | None = None) -> str:
@@ -32,37 +33,40 @@ def get_correlation_id() -> str | None:
     return _correlation_id.get()
 
 
-class JsonFormatter(logging.Formatter):
-    def __init__(self, service: str):
-        super().__init__()
-        self.service = service
+class CorrelationIdFilter(logging.Filter):
+    """Attaches the request's correlation id to every record.
 
-    def format(self, record: logging.LogRecord) -> str:
-        payload = {
-            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
-            "level": record.levelname,
-            "service": self.service,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
+    A filter rather than an argument at each call site: the id has to appear on
+    logs emitted deep in a call stack (boto3 retries, SQLAlchemy) that know
+    nothing about it.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
         cid = get_correlation_id()
         if cid:
-            payload["correlationId"] = cid
-        if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
-        # Anything passed via logger.info("...", extra={...}) rides along.
-        for key, value in record.__dict__.items():
-            if key not in _RESERVED and not key.startswith("_"):
-                payload[key] = value
-        return json.dumps(payload, default=str)
+            record.correlation_id = cid
+        return True
 
 
 def configure_logging(service: str, level: str = "INFO") -> None:
     handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter(service))
+    handler.setFormatter(
+        LambdaPowertoolsFormatter(
+            service=service,
+            # Powertools' own key name, so Insights queries are identical
+            # across services and Lambdas.
+            log_record_order=["level", "location", "message", "timestamp", "service"],
+        )
+    )
+    handler.addFilter(CorrelationIdFilter())
+
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level.upper())
-    # uvicorn installs its own noisy handlers; route them through ours.
+
+    # uvicorn installs its own handlers; route them through ours or half the
+    # request log stays unstructured.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-        logging.getLogger(name).handlers = [handler]
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers = [handler]
+        uvicorn_logger.propagate = False

@@ -17,3 +17,6 @@ Harvard-referenced acknowledgement of AI tooling goes in the report's declaratio
 | 2026-08-02 | Claude Code | W3 D3: saga outcome publisher (order-confirmed/order-rejected), SQS consumer, admin stock endpoints; 21 tests |
 | 2026-08-02 | Claude Code | W3 D4: Product Service - TTL cache with X-Cache header, category GSI reads, admin CRUD; 29 tests |
 | 2026-08-02 | Claude Code | W3 D5: full local saga demo against LocalStack + Postgres, both directions verified; scripts/saga-demo.sh |
+| 2026-08-03 | Claude Code | W4 D1: notification Lambda with Powertools Logger/Tracer/Idempotency, SES identity in Terraform, event-carried userEmail through the saga; 14 tests |
+| 2026-08-03 | Claude Code | W4 D2: Lambda Terraform (ARM64 + Powertools layer), SNS filter incl. loadTest exclusion, stock-reconciliation Lambda + enabled Asia/Colombo schedule, least-privilege Lambda IAM; 12 tests |
+| 2026-08-03 | Claude Code | W4 D3: Powertools formatter adopted across all four Fargate services so services and Lambdas emit one log shape; correlation id injected via logging filter |
