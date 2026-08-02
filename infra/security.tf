@@ -427,6 +427,87 @@ resource "aws_iam_role_policy" "scheduler" {
   })
 }
 
+# ─── WEBSOCKET LAMBDA DATA ACCESS (backlog item 33) ───────────
+#
+# The connect / disconnect / push Lambdas have their basic execution roles
+# defined in lambdas.tf (assume + logs + tracing). The actual data grants
+# live here so the least-privilege matrix stays in one place with the
+# ECS task role policies.
+#
+# Split (matches the least-privilege discussion in the report):
+#   connect      -> PutItem only on websocket-connections (writes its own row)
+#   disconnect   -> DeleteItem only (removes its own row; no read needed)
+#   push         -> Scan + Query + DeleteItem on the table (fan-out lookup +
+#                   inline pruning of stale rows) PLUS
+#                   execute-api:ManageConnections on the WSS stage ARN
+#
+# Why Scan on push and not a userId GSI: adding a GSI would modify the
+# existing websocket-connections table (out of scope for this chunk),
+# and at demo scale a Scan across an active-connections table (< 100 rows
+# per session) is defensible. Report notes `userId-index` as the
+# production upgrade for k6 scale.
+
+resource "aws_iam_role_policy" "ws_connect_lambda_data" {
+  name = "websocket-connections-put"
+  role = aws_iam_role.ws_connect_lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "RecordConnection"
+      Effect   = "Allow"
+      Action   = ["dynamodb:PutItem"]
+      Resource = [aws_dynamodb_table.websocket_connections.arn]
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "ws_disconnect_lambda_data" {
+  name = "websocket-connections-delete"
+  role = aws_iam_role.ws_disconnect_lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "RemoveConnection"
+      Effect   = "Allow"
+      Action   = ["dynamodb:DeleteItem"]
+      Resource = [aws_dynamodb_table.websocket_connections.arn]
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "ws_push_lambda_data" {
+  name = "websocket-connections-read-plus-manage"
+  role = aws_iam_role.ws_push_lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # Scan + Query for the fan-out lookup; DeleteItem so stale rows
+        # (410 GoneException) can be pruned inline.
+        Sid    = "ReadAndPruneConnections"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Scan",
+          "dynamodb:Query",
+          "dynamodb:DeleteItem",
+        ]
+        Resource = [aws_dynamodb_table.websocket_connections.arn]
+      },
+      {
+        # ManageConnections is the API-Gateway-side permission for
+        # postToConnection / getConnection / deleteConnection. Resource
+        # scoping uses the execute-api ARN of THIS API's stage only, so a
+        # compromised push Lambda cannot reach into another API in the
+        # account.
+        Sid      = "PostToConnection"
+        Effect   = "Allow"
+        Action   = ["execute-api:ManageConnections"]
+        Resource = ["arn:aws:execute-api:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${aws_apigatewayv2_api.ws.id}/*/POST/@connections/*"]
+      },
+    ]
+  })
+}
+
 # ─── COGNITO — the ONLY user pool (backlog item 2) ────────────
 # Defined exclusively in Terraform; the Week-1 console-created pool is gone.
 # Free tier covers this demo's MAU, so it is not gated on `live`.
