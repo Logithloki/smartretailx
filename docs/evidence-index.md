@@ -11,7 +11,8 @@ Every screenshot in `assignment-screenshots/` indexed against the Task 1–8 bri
 | 10s | Corrected infra applied · auth wall (401 without JWT) · Aurora auto-pause observed | pending (CW-1) |
 | 20s | Services responding via API GW → VPC Link → ALB | pending (CW-2) |
 | 30s | Saga both paths (CONFIRMED / REJECTED) · DLQ alarm | pending (CW-3) |
-| 40s | SES email received · structured logs · idempotency suppression | pending (CW-4) |
+| 30s | **Week 4 — notifications.** `30` SES verified-identity console · `31` real order-confirmation email in the inbox · `32` CloudWatch structured JSON showing one correlation id across API/SQS/SNS/Lambda · `33` idempotency suppressing a second delivery of the same SNS MessageId · `34` X-Ray service map including the notification hop · `35` stock-reconciliation schedule ENABLED in Asia/Colombo · `36` reconciliation alert for an order stuck in PENDING | pending (CW-4) |
+| 40s | (renumbered — Weeks 5–6 seams: Pipes, WebSocket, CloudFront, OIDC, Grafana, ADOT, Global Table) | pending (CW-3/CW-4) |
 | 50s | Pipes event flow · WebSocket live status in browser · empty GitHub secrets page | pending (CW-5) |
 | 60s | Grafana dashboards · X-Ray service map · Global Table both regions | pending (CW-6) |
 | 70s | k6 graphs · autoscaling 1→5 · chaos task-kill timeline · ZAP/bandit reports | pending (Week 7) |
