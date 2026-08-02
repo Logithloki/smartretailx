@@ -80,6 +80,18 @@ variable "image_tag" {
 # no longer exists in ECR - so the next unpark would have failed its image pull
 # and tripped the deployment circuit breaker.
 
+variable "ses_sender_email" {
+  description = "From address for order notifications. Empty disables the SES identity. Set it, apply, then click the verification link AWS emails to that address - SES will not send until you do."
+  type        = string
+  default     = ""
+}
+
+variable "notification_fallback_email" {
+  description = "Recipient used when an order event carries no userEmail. Must also be SES-verified while the account is in the sandbox."
+  type        = string
+  default     = ""
+}
+
 variable "service_desired_count" {
   description = "Tasks per service when live. Stays 0 until Week 2 pushes real images to ECR - a live service pointing at an absent image churns failed pulls and trips the deployment circuit breaker. Guide correction GC-2, see docs/guide-corrections.md."
   type        = number
