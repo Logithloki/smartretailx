@@ -5,3 +5,4 @@ pydantic-settings==2.7.0
 boto3==1.35.90
 PyJWT[crypto]==2.10.1
 cachetools==5.5.0
+aws-lambda-powertools==3.4.0
