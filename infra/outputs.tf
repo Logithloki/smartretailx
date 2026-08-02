@@ -60,6 +60,16 @@ output "sns_order_confirmed_arn" {
   value       = aws_sns_topic.order_confirmed.arn
 }
 
+output "orders_event_bus_arn" {
+  description = "EventBridge bus ARN receiving order.status-changed events from Pipes"
+  value       = aws_cloudwatch_event_bus.orders.arn
+}
+
+output "orders_event_bus_name" {
+  description = "EventBridge bus name (used when adding rules on this bus)"
+  value       = aws_cloudwatch_event_bus.orders.name
+}
+
 output "alerts_topic_arn" {
   description = "SNS alerts topic ARN (subscribe your email manually)"
   value       = aws_sns_topic.alerts.arn
