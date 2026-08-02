@@ -82,6 +82,55 @@ resource "aws_iam_role_policy" "pipes" {
 # The pipe itself is gated on `live` — Pipes bills per record processed, and
 # a parked stack should not be draining the stream. Follows the same toggle
 # pattern as NAT / ALB listener / ECS desired_count.
+# ─── EventBridge rule -> push Lambda ─────────────────────────
+# Closes the Pipes -> bus -> Lambda -> postToConnection loop:
+#
+#   DDB Streams (MODIFY, terminal status)
+#     -> Pipes filter
+#     -> orders bus (detail-type: order.status-changed, source: smartretailx.orders)
+#     -> THIS rule
+#     -> push Lambda
+#     -> apigatewaymanagementapi.postToConnection(connectionId, data)
+#
+# Rule + target + invoke permission are all gated on `live` - the push
+# Lambda is idle in a parked stack, and Pipes is not draining the stream
+# either, so there is nothing for a rule to catch.
+#
+# Needs CW-3a validation on real AWS.
+
+resource "aws_cloudwatch_event_rule" "order_status_changed" {
+  count          = var.live ? 1 : 0
+  name           = "${var.project_name}-order-status-changed"
+  description    = "Route Pipes-forwarded order status changes to the WebSocket push Lambda"
+  event_bus_name = aws_cloudwatch_event_bus.orders.name
+
+  event_pattern = jsonencode({
+    source        = ["smartretailx.orders"]
+    "detail-type" = ["order.status-changed"]
+  })
+
+  tags = {
+    Name = "${var.project_name}-order-status-changed"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "push" {
+  count          = var.live ? 1 : 0
+  rule           = aws_cloudwatch_event_rule.order_status_changed[0].name
+  event_bus_name = aws_cloudwatch_event_bus.orders.name
+  target_id      = "push-lambda"
+  arn            = aws_lambda_function.ws_push.arn
+}
+
+resource "aws_lambda_permission" "push_from_events" {
+  count         = var.live ? 1 : 0
+  statement_id  = "AllowInvokeFromEventBridgeOrderStatusRule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ws_push.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.order_status_changed[0].arn
+}
+
 resource "aws_pipes_pipe" "order_status" {
   count    = var.live ? 1 : 0
   name     = "${var.project_name}-order-status"
@@ -116,7 +165,7 @@ resource "aws_pipes_pipe" "order_status" {
   }
 
   target_parameters {
-    event_bridge_event_bus_parameters {
+    eventbridge_event_bus_parameters {
       # Stable identity so the downstream EventBridge rule (Week 5 chunk 1
       # commit 5) can pattern-match without depending on the raw DDB record
       # shape.
