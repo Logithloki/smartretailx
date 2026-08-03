@@ -47,3 +47,44 @@ body { margin: 0; padding: 0; }
 
 .error { color: #b00; }
 .meta { color: #666; font-size: 0.9rem; }
+
+/* Vertical form stack used by Place Order + Admin CRUD forms */
+.stack { display: flex; flex-direction: column; gap: 0.75rem; max-width: 480px; }
+.stack label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+.stack input, .stack select, .stack textarea {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid rgba(128,128,128,0.35);
+  border-radius: 4px;
+  font: inherit;
+  background: transparent;
+  color: inherit;
+}
+.stack button {
+  align-self: flex-start;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+/* Order status pills */
+.status { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; }
+.status-PENDING { background: #f5c518; color: #222; }
+.status-CONFIRMED { background: #2e7d32; color: #fff; }
+.status-REJECTED { background: #c62828; color: #fff; }
+
+/* Order + stock tables */
+.table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+.table th, .table td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(128,128,128,0.2); }
+.table th { font-weight: 600; }
+.table tr.highlight { background: rgba(245, 197, 24, 0.15); }
+.table tr.updated { animation: flash 1.2s ease-out; }
+@keyframes flash {
+  0% { background: rgba(46, 125, 50, 0.35); }
+  100% { background: transparent; }
+}
+
+.actions { display: flex; gap: 0.5rem; }
+.actions button { padding: 0.25rem 0.6rem; cursor: pointer; }
+.actions .danger { color: #c62828; }
+.ws-indicator { font-size: 0.8rem; color: #666; margin-left: 0.75rem; }
+.ws-indicator.connected { color: #2e7d32; }
+.ws-indicator.dropped { color: #c62828; }
