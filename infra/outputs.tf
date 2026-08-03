@@ -80,6 +80,26 @@ output "websocket_endpoint" {
   value       = one(aws_apigatewayv2_stage.ws[*].invoke_url)
 }
 
+output "spa_bucket_name" {
+  description = "S3 bucket for the SPA build artefacts (target of `aws s3 sync ./dist`)"
+  value       = aws_s3_bucket.spa.bucket
+}
+
+output "cloudfront_domain" {
+  description = "CloudFront distribution domain (public entry point for the SPA and /api/*)"
+  value       = aws_cloudfront_distribution.main.domain_name
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID (needed for cache invalidation from CI)"
+  value       = aws_cloudfront_distribution.main.id
+}
+
+output "waf_web_acl_arn" {
+  description = "WAFv2 WebACL ARN (attached to CloudFront)"
+  value       = aws_wafv2_web_acl.cloudfront.arn
+}
+
 output "alerts_topic_arn" {
   description = "SNS alerts topic ARN (subscribe your email manually)"
   value       = aws_sns_topic.alerts.arn

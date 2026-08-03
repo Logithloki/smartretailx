@@ -166,6 +166,13 @@ resource "aws_apigatewayv2_api" "main" {
   protocol_type = "HTTP"
   description   = "SmartRetailX public edge - JWT authorised, VPC Link to internal ALB"
 
+  # SPA -> CloudFront -> HTTP API is same-origin from the browser's view
+  # (CloudFront proxies /api/*), so no CORS preflight fires on that path.
+  # This list only covers direct-to-API access from `var.cors_allow_origins`
+  # (localhost:5173 during Vite dev, plus anything the operator passes in
+  # via -var). Referencing aws_cloudfront_distribution here would create a
+  # cycle (CF -> API GW origin -> CF domain in CORS) and buys nothing,
+  # since the SPA never hits execute-api directly in prod.
   cors_configuration {
     allow_origins  = var.cors_allow_origins
     allow_methods  = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
