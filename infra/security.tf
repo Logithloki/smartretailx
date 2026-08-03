@@ -276,6 +276,53 @@ data "aws_iam_policy_document" "lambda_assume" {
   }
 }
 
+# ─── ADOT sidecar permissions on every service task role ────
+#
+# The collector runs inside the task and inherits the task role's
+# credentials via IMDS. Rather than duplicating the same policy block
+# on all four inline task policies (order / inventory / user /
+# product), attach the AWS-managed policies once per role via a map.
+#
+# Why managed policies here (a break from the "spell it out" default):
+# these two exactly describe "what an ADOT collector needs" and are
+# maintained by AWS - if a future ADOT release wants a new API call,
+# the managed policy is updated centrally. A hand-rolled equivalent
+# would drift.
+#
+#   AWSXrayWriteOnlyAccess -> PutTraceSegments, PutTelemetryRecords,
+#                             GetSamplingRules, GetSamplingTargets.
+#   CloudWatchAgentServerPolicy -> PutMetricData + CW Logs write path
+#                                  used by the EMF exporter.
+locals {
+  adot_task_roles = {
+    order     = aws_iam_role.order_task.name
+    inventory = aws_iam_role.inventory_task.name
+    user      = aws_iam_role.user_task.name
+    product   = aws_iam_role.product_task.name
+  }
+  adot_managed_policies = [
+    "arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess",
+    "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+  ]
+}
+
+resource "aws_iam_role_policy_attachment" "adot_task_policies" {
+  for_each = {
+    for pair in flatten([
+      for svc, role in local.adot_task_roles : [
+        for arn in local.adot_managed_policies : {
+          key  = "${svc}-${basename(arn)}"
+          role = role
+          arn  = arn
+        }
+      ]
+    ]) : pair.key => pair
+  }
+
+  role       = each.value.role
+  policy_arn = each.value.arn
+}
+
 # Written out rather than attaching AWSLambdaBasicExecutionRole so the report's
 # least-privilege matrix shows real grants instead of a managed-policy name.
 locals {
