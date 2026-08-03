@@ -563,8 +563,22 @@ resource "aws_cognito_user_pool_client" "spa" {
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
   supported_identity_providers         = ["COGNITO"]
 
-  callback_urls = var.frontend_callback_urls
-  logout_urls   = var.frontend_logout_urls
+  # Hosted UI redirects live at two homes:
+  #   - localhost:5173 during Vite dev (backlog 27 SPA scaffold)
+  #   - the CloudFront distribution domain in prod
+  # Cognito requires every URL used in an auth-code flow to be pre-registered,
+  # so the SPA cannot receive the callback on a URL not in this list.
+  callback_urls = concat(
+    var.frontend_callback_urls,
+    [
+      "https://${aws_cloudfront_distribution.main.domain_name}/callback",
+      "https://${aws_cloudfront_distribution.main.domain_name}/",
+    ],
+  )
+  logout_urls = concat(
+    var.frontend_logout_urls,
+    ["https://${aws_cloudfront_distribution.main.domain_name}/"],
+  )
 
   explicit_auth_flows = [
     "ALLOW_USER_SRP_AUTH",
