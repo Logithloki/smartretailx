@@ -313,47 +313,110 @@ resource "aws_ecs_task_definition" "services" {
   family                   = "${var.project_name}-${each.key}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = 256
-  memory                   = 512
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = each.value.task_role_arn
+  # Bumped to 512 CPU / 1024 memory (from 256 / 512) when the ADOT
+  # collector sidecar landed. Fargate CPU/memory combos are discrete:
+  # 512 CPU pairs with 1024/2048/3072/4096 MB. 1024 gives ~256 MB
+  # headroom for the app (typical FastAPI RSS ~150-200 MB) + ~64 MB
+  # for the collector + kernel + margins. If the app OOMs, jump to
+  # 2048 - do not go back to 512 without removing the sidecar first.
+  cpu                = 512
+  memory             = 1024
+  execution_role_arn = aws_iam_role.ecs_execution.arn
+  task_role_arn      = each.value.task_role_arn
 
   runtime_platform {
     operating_system_family = "LINUX"
     cpu_architecture        = "ARM64"
   }
 
-  container_definitions = jsonencode([{
-    name      = "${each.key}-service"
-    image     = "${aws_ecr_repository.services["${each.key}-service"].repository_url}:${var.image_tag}"
-    essential = true
+  container_definitions = jsonencode([
+    {
+      name      = "${each.key}-service"
+      image     = "${aws_ecr_repository.services["${each.key}-service"].repository_url}:${var.image_tag}"
+      essential = true
 
-    portMappings = [{
-      containerPort = 8000
-      protocol      = "tcp"
-    }]
+      portMappings = [{
+        containerPort = 8000
+        protocol      = "tcp"
+      }]
 
-    environment = [
-      for k, v in merge(
-        local.common_environment,
-        { POWERTOOLS_SERVICE_NAME = "${each.key}-service" },
-        each.value.environment
-      ) : { name = k, value = tostring(v) }
-    ]
+      # OTEL_EXPORTER_OTLP_ENDPOINT points the service's OpenTelemetry
+      # SDK at the ADOT sidecar on localhost (same task = same
+      # loopback). Powertools Tracer uses the AWS X-Ray SDK today so
+      # this env var is mostly forward-compatible with a future
+      # OTel-SDK migration, but the ADOT collector also scrapes
+      # /metrics if we ever add that endpoint. Setting it now costs
+      # nothing and stops a viva question "where's the OTel config?"
+      environment = [
+        for k, v in merge(
+          local.common_environment,
+          {
+            POWERTOOLS_SERVICE_NAME     = "${each.key}-service"
+            OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"
+            OTEL_SERVICE_NAME           = "${var.project_name}-${each.key}"
+            OTEL_RESOURCE_ATTRIBUTES    = "service.name=${var.project_name}-${each.key},service.namespace=${var.project_name},deployment.environment=production"
+          },
+          each.value.environment
+        ) : { name = k, value = tostring(v) }
+      ]
 
-    secrets = [
-      for k, v in each.value.secrets : { name = k, valueFrom = v }
-    ]
+      secrets = [
+        for k, v in each.value.secrets : { name = k, valueFrom = v }
+      ]
 
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        "awslogs-group"         = aws_cloudwatch_log_group.services[each.key].name
-        "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "ecs"
+      # dependsOn ensures the app doesn't try to emit spans before the
+      # sidecar is listening on 4317. HEALTHY (not just STARTED) so the
+      # collector is actually ready to receive.
+      dependsOn = [{
+        containerName = "adot-collector"
+        condition     = "HEALTHY"
+      }]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.services[each.key].name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ecs"
+        }
       }
-    }
-  }])
+    },
+
+    # ─── ADOT collector sidecar (backlog item observability) ──
+    # AWS Distro for OpenTelemetry. Ships a preset ECS config at
+    # /etc/ecs/ecs-default-config.yaml that fans OTLP receives out to
+    # X-Ray (traces) + CloudWatch EMF (metrics). Runs as a sidecar in
+    # the same task so the app talks to it over loopback (no cross-
+    # container network cost, no service discovery).
+    {
+      name      = "adot-collector"
+      image     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.42.0"
+      essential = false # A collector crash MUST NOT kill the app - it
+      # only carries telemetry. Losing spans is preferable to losing
+      # requests during a demo.
+
+      command = ["--config=/etc/ecs/ecs-default-config.yaml"]
+
+      # Health check: the collector exposes an HTTP health-check
+      # extension on 13133 when the default config is used.
+      healthCheck = {
+        command     = ["CMD-SHELL", "wget -q -O - http://localhost:13133/ || exit 1"]
+        interval    = 15
+        timeout     = 5
+        retries     = 3
+        startPeriod = 20
+      }
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.services[each.key].name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "adot"
+        }
+      }
+    },
+  ])
 
   tags = {
     Name = "${var.project_name}-${each.key}-task"
