@@ -33,8 +33,14 @@ resource "aws_apigatewayv2_api" "ws" {
 # ─── Authorizer Lambda (validates Cognito JWT off the query string) ──
 
 data "archive_file" "ws_authorizer" {
-  type        = "zip"
-  source_file = "${path.module}/../services/ws-authorizer-lambda/handler.py"
+  type = "zip"
+  # Packaging pattern: source_dir over source_file. PyJWT[crypto] needs the
+  # cryptography wheel bundled INTO the zip - archive_file with source_file
+  # would ship just handler.py and the Lambda would fail on
+  # `import jwt`. scripts/build-lambda-packages.ps1 populates this directory
+  # with Linux ARM64 wheels (pip --platform manylinux2014_aarch64); run it
+  # before every terraform apply that touches this Lambda.
+  source_dir  = "${path.module}/build/ws-authorizer-src"
   output_path = "${path.module}/build/ws-authorizer-lambda.zip"
 }
 
@@ -124,14 +130,20 @@ resource "aws_lambda_permission" "ws_authorizer_invoke" {
 
 # The authorizer itself is a resource on the API; the routes reference it
 # via `authorizer_id`. Not count-gated (free at rest); the routes below are.
+#
+# WebSocket authorizers deliberately do NOT support two options that HTTP
+# authorizers do:
+#   - authorizer_result_ttl_in_seconds - the API rejects it as a bad request.
+#   - authorizer_payload_format_version - implicit for WS (only v1 exists).
+# We rely on Cognito's short access-token TTL (60 minutes) for freshness;
+# caching authorizer decisions across sessions was never desirable for the
+# WS path anyway (a revoked user should not stay connected until TTL).
 resource "aws_apigatewayv2_authorizer" "ws_connect" {
-  api_id                            = aws_apigatewayv2_api.ws.id
-  name                              = "${var.project_name}-ws-cognito"
-  authorizer_type                   = "REQUEST"
-  authorizer_uri                    = aws_lambda_function.ws_authorizer.invoke_arn
-  identity_sources                  = ["route.request.querystring.token"]
-  authorizer_result_ttl_in_seconds  = 0
-  authorizer_payload_format_version = "1.0" # WebSocket authorizers use payload v1 only
+  api_id           = aws_apigatewayv2_api.ws.id
+  name             = "${var.project_name}-ws-cognito"
+  authorizer_type  = "REQUEST"
+  authorizer_uri   = aws_lambda_function.ws_authorizer.invoke_arn
+  identity_sources = ["route.request.querystring.token"]
 }
 
 # ─── Integrations (AWS_PROXY -> connect/disconnect/default Lambdas) ──
@@ -209,11 +221,13 @@ resource "aws_apigatewayv2_stage" "ws" {
   auto_deploy = true
 
   # These references force stage deployment to include the routes. Without
-  # them a stage created before the routes exist stays empty.
+  # them a stage created before the routes exist stays empty. The account
+  # setting is required for access_log_settings on a WS stage.
   depends_on = [
     aws_apigatewayv2_route.ws_connect,
     aws_apigatewayv2_route.ws_disconnect,
     aws_apigatewayv2_route.ws_default,
+    aws_api_gateway_account.main,
   ]
 
   default_route_settings {
@@ -250,4 +264,39 @@ resource "aws_cloudwatch_log_group" "ws_access" {
   tags = {
     Name = "${var.project_name}-ws-access-logs"
   }
+}
+
+# ─── API Gateway CloudWatch role (account-level singleton) ───
+#
+# WebSocket APIs (and REST APIs) require an account-level IAM role that
+# API Gateway itself uses to write access logs to CloudWatch. Without
+# this, creating a WS stage with access_log_settings fails with
+# "CloudWatch Logs role ARN must be set in account settings to enable
+# logging". HTTP APIs v2 use a different log-delivery mechanism and do
+# not need this.
+#
+# aws_api_gateway_account is an account-wide setting; setting it here
+# does not conflict with anything else because we have no other
+# REST/WebSocket APIs. Documented so a future contributor knows to check
+# `aws apigateway get-account` before touching it.
+
+resource "aws_iam_role" "api_gateway_cloudwatch" {
+  name = "${var.project_name}-apigw-cloudwatch"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "apigateway.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "api_gateway_cloudwatch" {
+  role       = aws_iam_role.api_gateway_cloudwatch.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+}
+
+resource "aws_api_gateway_account" "main" {
+  cloudwatch_role_arn = aws_iam_role.api_gateway_cloudwatch.arn
 }

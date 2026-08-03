@@ -4,6 +4,10 @@
 *.tfstate.backup
 *.tfvars
 
+# Terraform Lambda build output (vendored Linux ARM64 wheels + zips).
+# Rebuild locally with `make lambda-build` before `terraform apply`.
+infra/build/
+
 # Python
 __pycache__/
 *.pyc
