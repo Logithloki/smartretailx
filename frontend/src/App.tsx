@@ -2,20 +2,29 @@ import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
 import { ProductsPage } from "./pages/ProductsPage";
 import { CallbackPage } from "./pages/CallbackPage";
+import { PlaceOrderPage } from "./pages/PlaceOrderPage";
+import { MyOrdersPage } from "./pages/MyOrdersPage";
+import { AdminProductsPage } from "./pages/AdminProductsPage";
+import { AdminStockPage } from "./pages/AdminStockPage";
+import { useIsAdmin } from "./hooks/useIsAdmin";
 
 /*
- * The app is deliberately tiny at Week 5 D4 - the "auth end-to-end
- * proven" milestone from the lecturer ruling H.2 is:
+ * Route map (backlog items 27-30 + lecturer ruling H.2):
  *
- *   1. click a Login button
- *   2. Cognito Hosted UI shows
- *   3. after login the SPA renders GET /v1/products with the bearer
- *      token attached
+ *   /                    -> redirect to /products
+ *   /products            (public read) list products
+ *   /orders/new          (customer)    place an order
+ *   /orders              (customer)    my orders + live WS status
+ *   /admin/products      (admin)       products CRUD
+ *   /admin/stock         (admin)       stock view/adjust
+ *   /callback            OIDC redirect handler
  *
- * If that works, the whole SPA <-> Cognito <-> HTTP API <-> ECS chain
- * is proven. W6 D1-3 fills out CRUD pages against this skeleton
- * (backlog items 28-30).
+ * ProtectedRoute enforces authentication. AdminRoute enforces admin
+ * group membership on top. Both are UI-only conveniences - every
+ * admin endpoint independently checks cognito:groups server-side, so
+ * a bypass on the SPA gate is meaningless.
  */
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
 
@@ -23,10 +32,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (auth.error) return <p>Auth error: {auth.error.message}</p>;
 
   if (!auth.isAuthenticated) {
-    // signinRedirect kicks off authorization-code + PKCE. The browser
-    // is sent to <authority>/oauth2/authorize with code_challenge=...;
-    // Cognito's Hosted UI takes over from there and redirects back to
-    // redirect_uri with ?code=<one-time>.
     auth.signinRedirect();
     return <p>Redirecting to sign-in...</p>;
   }
@@ -34,8 +39,25 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const isAdmin = useIsAdmin();
+  return (
+    <ProtectedRoute>
+      {isAdmin ? (
+        children
+      ) : (
+        <p className="error">
+          This page is restricted to administrators. Contact support if
+          you believe you should have access.
+        </p>
+      )}
+    </ProtectedRoute>
+  );
+}
+
 export default function App() {
   const auth = useAuth();
+  const isAdmin = useIsAdmin();
 
   return (
     <div className="app">
@@ -45,10 +67,16 @@ export default function App() {
         </Link>
         <nav>
           <Link to="/products">Products</Link>
+          {auth.isAuthenticated && <Link to="/orders/new">New order</Link>}
+          {auth.isAuthenticated && <Link to="/orders">My orders</Link>}
+          {isAdmin && <Link to="/admin/products">Admin: products</Link>}
+          {isAdmin && <Link to="/admin/stock">Admin: stock</Link>}
           {auth.isAuthenticated ? (
             <button
               onClick={() =>
-                void auth.signoutRedirect({ post_logout_redirect_uri: window.location.origin })
+                void auth.signoutRedirect({
+                  post_logout_redirect_uri: window.location.origin,
+                })
               }
             >
               Sign out ({auth.user?.profile.email as string | undefined})
@@ -69,6 +97,38 @@ export default function App() {
               <ProtectedRoute>
                 <ProductsPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/orders/new"
+            element={
+              <ProtectedRoute>
+                <PlaceOrderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/orders"
+            element={
+              <ProtectedRoute>
+                <MyOrdersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/products"
+            element={
+              <AdminRoute>
+                <AdminProductsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/stock"
+            element={
+              <AdminRoute>
+                <AdminStockPage />
+              </AdminRoute>
             }
           />
           <Route path="*" element={<p>Not found</p>} />
