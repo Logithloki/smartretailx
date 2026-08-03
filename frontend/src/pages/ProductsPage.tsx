@@ -1,28 +1,17 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "react-oidc-context";
-import { API_BASE_URL } from "../auth-config";
-
-interface Product {
-  productId: string;
-  productName: string;
-  price: string;
-  category: string;
-  description: string | null;
-}
-
-interface ProductListResponse {
-  products: Product[];
-  count: number;
-}
+import { apiFetch, ApiError } from "../api/client";
+import type { Product, ProductListResponse } from "../api/types";
 
 /*
- * This page IS the "auth end-to-end proven" milestone. It:
- *   1. Reads the current user's access_token from react-oidc-context
- *   2. Calls GET <API_BASE_URL>/v1/products with Authorization: Bearer
- *   3. Renders the list, or the exact error the backend returned
+ * Public product catalogue (backlog item 27). This page IS the "auth
+ * end-to-end proven" milestone: signed-in user, JWT attached, product
+ * list rendered from the backend. The other pages just extend this
+ * pattern with CRUD flows (backlog 28-30).
  *
- * Styling is intentionally minimal. Week 5 D4's goal is proving the
- * chain; product/CRUD UX comes in W6 (backlog items 28-30).
+ * All fetch/auth/idempotency logic goes through `apiFetch` so a
+ * change to header shape (e.g. adding a correlation-id) happens in
+ * one file, not one-per-page.
  */
 export function ProductsPage() {
   const auth = useAuth();
@@ -30,25 +19,17 @@ export function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!auth.user?.access_token) return;
+    const token = auth.user?.access_token;
+    if (!token) return;
 
-    // AbortController lets React StrictMode's double-invoke in dev not
-    // double-fire the real fetch to /v1/products.
     const controller = new AbortController();
-
-    fetch(`${API_BASE_URL}/v1/products`, {
-      headers: { Authorization: `Bearer ${auth.user.access_token}` },
+    apiFetch<ProductListResponse>(token, "/v1/products", {
       signal: controller.signal,
     })
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-        }
-        return (await res.json()) as ProductListResponse;
-      })
       .then((data) => setProducts(data.products))
-      .catch((err) => {
-        if (err.name !== "AbortError") setError(err.message);
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setError(err instanceof ApiError ? err.message : String(err));
       });
 
     return () => controller.abort();
