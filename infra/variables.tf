@@ -92,6 +92,17 @@ variable "notification_fallback_email" {
   default     = ""
 }
 
+# The GitHub repository whose workflows can assume the deploy role via
+# OIDC. Format is "owner/repo". Kept as a variable (rather than baked in)
+# so a fork or an owner rename does not require editing infra code; also
+# so a future markbook contributor can point their fork at their own
+# short-lived deploy role without touching this file.
+variable "github_repo" {
+  description = "GitHub repo (owner/name) allowed to assume the OIDC deploy role"
+  type        = string
+  default     = "Logithloki/smartretailx"
+}
+
 variable "service_desired_count" {
   description = "Tasks per service when live. Stays 0 until Week 2 pushes real images to ECR - a live service pointing at an absent image churns failed pulls and trips the deployment circuit breaker. Guide correction GC-2, see docs/guide-corrections.md."
   type        = number
