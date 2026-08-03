@@ -1,0 +1,49 @@
+/* Minimal styling only - Week 5 D4 is about proving auth end-to-end,
+ * not visual design. W6 D2 replaces this with a proper design system
+ * pass (backlog item 27, lecturer ruling H.2). */
+
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  color-scheme: light dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; }
+
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(128,128,128,0.2);
+}
+.app-header .brand { font-weight: 600; font-size: 1.15rem; text-decoration: none; color: inherit; }
+.app-header nav { display: flex; gap: 1rem; align-items: center; }
+.app-header nav a { color: inherit; text-decoration: none; }
+.app-header nav button { padding: 0.4rem 0.8rem; cursor: pointer; }
+
+.app-main { padding: 1.5rem; max-width: 960px; margin: 0 auto; width: 100%; }
+
+.product-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.product-card {
+  border: 1px solid rgba(128,128,128,0.25);
+  border-radius: 8px;
+  padding: 1rem;
+}
+.product-card h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+.product-card .price { font-weight: 600; margin: 0.25rem 0; }
+.product-card .category { color: #666; font-size: 0.9rem; margin: 0.25rem 0; }
+.product-card .id { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 0.75rem; color: #999; margin-top: 0.5rem; }
+
+.error { color: #b00; }
+.meta { color: #666; font-size: 0.9rem; }
