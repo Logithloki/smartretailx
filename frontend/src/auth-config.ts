@@ -27,6 +27,11 @@ export const API_BASE_URL = required(
   import.meta.env.VITE_API_BASE_URL,
 );
 
+export const WEBSOCKET_URL = required(
+  "VITE_WEBSOCKET_URL",
+  import.meta.env.VITE_WEBSOCKET_URL,
+);
+
 export const authConfig: AuthProviderProps = {
   authority: required(
     "VITE_COGNITO_AUTHORITY",
