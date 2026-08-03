@@ -28,16 +28,19 @@ test:
 	  fi; \
 	done
 
-deploy:
+lambda-build:
+	powershell -ExecutionPolicy Bypass -File scripts/build-lambda-packages.ps1
+
+deploy: lambda-build
 	cd infra && terraform init && terraform apply
 
 destroy:
 	cd infra && terraform destroy
 
-park:
+park: lambda-build
 	cd infra && terraform apply -var="live=false"
 
-unpark:
+unpark: lambda-build
 	cd infra && terraform apply -var="live=true"
 
 scale-down:
