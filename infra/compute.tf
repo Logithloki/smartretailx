@@ -438,6 +438,10 @@ resource "aws_ecs_service" "services" {
   desired_count   = var.live ? var.service_desired_count : 0
   launch_type     = "FARGATE"
 
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   network_configuration {
     subnets          = aws_subnet.private[*].id
     security_groups  = [aws_security_group.ecs_tasks.id]
