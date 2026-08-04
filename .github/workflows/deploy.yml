@@ -114,15 +114,85 @@ jobs:
         with:
           directory: infra/
           framework: terraform
-          # Soft failure at Week 5 - the report captures the findings;
-          # CW-6 hardens the highest-severity ones. Bump to hard-fail
-          # in Week 7 once the noise is triaged.
-          soft_fail: true
+          # Hard failure enabled in Week 7 after baseline triage.
+          soft_fail: false
+
+  integration-test:
+    name: Integration tests (LocalStack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start services
+        run: docker compose up -d --build --wait
+        timeout-minutes: 5
+
+      - name: Wait for services
+        run: |
+          for svc in 8001 8002 8003 8004; do
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:$svc/health > /dev/null 2>&1; then
+                echo "Service on port $svc is healthy"
+                break
+              fi
+              echo "Waiting for port $svc... ($i/30)"
+              sleep 2
+            done
+          done
+
+      - name: Run integration tests
+        run: |
+          # Create a product
+          PRODUCT=$(curl -sf -X POST http://localhost:8004/v1/products \
+            -H 'Content-Type: application/json' \
+            -H 'X-User-Id: test-admin' \
+            -H 'X-User-Groups: admins' \
+            -d '{"name":"CI Test Product","price":"9.99","category":"test","description":"Integration test product"}' || echo 'FAIL')
+          echo "Product: $PRODUCT"
+
+          PRODUCT_ID=$(echo $PRODUCT | python3 -c "import sys,json; print(json.load(sys.stdin)['productId'])")
+          echo "Product ID: $PRODUCT_ID"
+
+          # Verify product is retrievable
+          curl -sf http://localhost:8004/v1/products/$PRODUCT_ID \
+            -H 'X-User-Id: test-user' \
+            -H 'X-User-Groups: customers'
+          echo
+
+          # Place an order
+          ORDER=$(curl -sf -X POST http://localhost:8001/v1/orders \
+            -H 'Content-Type: application/json' \
+            -H 'X-User-Id: test-user' \
+            -H 'X-User-Groups: customers' \
+            -H 'Idempotency-Key: ci-test-001' \
+            -d "{\"items\":[{\"productId\":\"$PRODUCT_ID\",\"quantity\":1,\"unitPrice\":\"9.99\"}]}" || echo 'FAIL')
+          echo "Order: $ORDER"
+
+          ORDER_ID=$(echo $ORDER | python3 -c "import sys,json; print(json.load(sys.stdin)['orderId'])")
+          echo "Order ID: $ORDER_ID"
+
+          # Wait for saga to complete (order should transition from PENDING)
+          sleep 5
+
+          # Check order status
+          STATUS=$(curl -sf http://localhost:8001/v1/orders/$ORDER_ID \
+            -H 'X-User-Id: test-user' \
+            -H 'X-User-Groups: customers')
+          echo "Order status: $STATUS"
+          echo "Integration test complete!"
+
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
 
   # ─── Stage 3+4: buildx ARM64 + Trivy per service ──────────────
   build-and-scan:
     name: buildx ARM64 + trivy (${{ matrix.service }})
-    needs: [test, infra-lint]
+    needs: [test, infra-lint, integration-test]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:

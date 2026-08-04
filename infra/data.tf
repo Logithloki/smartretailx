@@ -61,6 +61,11 @@ resource "aws_dynamodb_table" "products" {
   stream_enabled   = true
   stream_view_type = "NEW_AND_OLD_IMAGES"
 
+  # ADR-07 APAC expansion cell (products only, no personal data, GDPR-lawful)
+  replica {
+    region_name = "ap-south-1"
+  }
+
   tags = {
     Name = "${var.project_name}-products"
   }

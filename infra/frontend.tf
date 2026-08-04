@@ -242,10 +242,9 @@ resource "aws_s3_bucket_policy" "spa" {
 #   KnownBadInputs  -> known-attack signatures (Log4Shell, etc.)
 #   SQLi            -> SQL injection specifically
 #
-# Each rule is `count`-only for the demo to avoid false-positive blocks
-# during k6 or ZAP. Flip `override_action` to `none` (i.e. actually
-# block) once the report's k6 baseline is captured — this is Week 7's
-# hardening step, not Week 5's.
+# Each rule was `count`-only during Week 5 demo/baselining. Flipped
+# `override_action` to `none` (i.e. actually block matching requests) —
+# Week 7 hardening complete.
 resource "aws_wafv2_web_acl" "cloudfront" {
   provider = aws.us_east_1
 
@@ -261,7 +260,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     name     = "AWSManagedRulesCommonRuleSet"
     priority = 1
     override_action {
-      count {}
+      none {}
     }
     statement {
       managed_rule_group_statement {
@@ -280,7 +279,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     name     = "AWSManagedRulesKnownBadInputsRuleSet"
     priority = 2
     override_action {
-      count {}
+      none {}
     }
     statement {
       managed_rule_group_statement {
@@ -299,7 +298,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     name     = "AWSManagedRulesSQLiRuleSet"
     priority = 3
     override_action {
-      count {}
+      none {}
     }
     statement {
       managed_rule_group_statement {
