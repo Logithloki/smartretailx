@@ -152,6 +152,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY=test
           PRODUCTS_TABLE_NAME=smartretailx-products
           CACHE_TTL_SECONDS=300
+          LOCAL_DEV_GROUPS=admin
           EOF
           
           cat <<EOF > services/user-service/.env.local
