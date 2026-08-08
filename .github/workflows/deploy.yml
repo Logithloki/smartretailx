@@ -126,10 +126,59 @@ jobs:
 
       - name: Start services
         run: |
-          touch services/order-service/.env.local
-          touch services/inventory-service/.env.local
-          touch services/user-service/.env.local
-          touch services/product-service/.env.local
+          cat <<EOF > services/order-service/.env.local
+          ENV=local
+          AWS_REGION=eu-west-1
+          APP_REGION=eu-west-1
+          AWS_ENDPOINT_URL=http://localstack:4566
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          ORDERS_QUEUE_URL=http://localstack:4566/000000000000/smartretailx-orders-queue
+          ORDER_EVENTS_QUEUE_URL=http://localstack:4566/000000000000/smartretailx-order-events
+          IDEMPOTENCY_TABLE_NAME=smartretailx-idempotency
+          ORDERS_TABLE_NAME=smartretailx-orders
+          COMPENSATION_CONSUMER_ENABLED=true
+          EOF
+          
+          cat <<EOF > services/product-service/.env.local
+          ENV=local
+          AWS_REGION=eu-west-1
+          APP_REGION=eu-west-1
+          AWS_ENDPOINT_URL=http://localstack:4566
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          PRODUCTS_TABLE_NAME=smartretailx-products
+          CACHE_TTL_SECONDS=300
+          EOF
+          
+          cat <<EOF > services/user-service/.env.local
+          ENV=local
+          AWS_REGION=eu-west-1
+          APP_REGION=eu-west-1
+          AWS_ENDPOINT_URL=http://localstack:4566
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          COGNITO_USER_POOL_ID=local-mock
+          COGNITO_APP_CLIENT_ID=local-mock
+          EOF
+          
+          cat <<EOF > services/inventory-service/.env.local
+          ENV=local
+          AWS_REGION=eu-west-1
+          APP_REGION=eu-west-1
+          AWS_ENDPOINT_URL=http://localstack:4566
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          DB_HOST=postgres
+          DB_PORT=5432
+          DB_NAME=inventory
+          DB_USER=smartretailx_admin
+          DB_PASSWORD=SmartRetailX2026!Secure
+          CONSUMER_ENABLED=true
+          ORDERS_QUEUE_URL=http://localstack:4566/000000000000/smartretailx-orders-queue
+          SNS_TOPIC_ARN=arn:aws:sns:eu-west-1:000000000000:smartretailx-order-confirmed
+          EOF
+          
           docker compose up -d --build --wait
         timeout-minutes: 5
 
