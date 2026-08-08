@@ -303,7 +303,8 @@ jobs:
         if: vars[env.AWS_ROLE_ARN_VAR] == ''
         uses: docker/build-push-action@v5
         with:
-          context: services/${{ matrix.service }}
+          context: services
+          file: services/${{ matrix.service }}/Dockerfile
           push: false
           load: true
           tags: local/smartretailx-${{ matrix.service }}:${{ github.sha }}
@@ -312,7 +313,8 @@ jobs:
         if: vars[env.AWS_ROLE_ARN_VAR] != ''
         uses: docker/build-push-action@v5
         with:
-          context: services/${{ matrix.service }}
+          context: services
+          file: services/${{ matrix.service }}/Dockerfile
           platforms: linux/arm64
           push: true
           # Commit SHA tag - IMMUTABLE ECR repositories reject the same
