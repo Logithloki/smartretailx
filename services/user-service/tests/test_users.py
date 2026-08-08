@@ -11,6 +11,19 @@ from app.main import create_app
 from app.services import CognitoUserRepository, InMemoryUserRepository, UserNotFound
 
 
+@pytest.fixture(autouse=True)
+def aws_credentials(monkeypatch):
+    """Keep moto sealed off from any real profile on this machine."""
+    for key, value in {
+        "AWS_ACCESS_KEY_ID": "testing",
+        "AWS_SECRET_ACCESS_KEY": "testing",
+        "AWS_SECURITY_TOKEN": "testing",
+        "AWS_SESSION_TOKEN": "testing",
+        "AWS_DEFAULT_REGION": "eu-west-1",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+
 def local_settings(**kwargs) -> Settings:
     base = {"env": "local", "_env_file": None}
     base.update(kwargs)
