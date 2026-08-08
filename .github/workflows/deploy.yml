@@ -288,6 +288,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS credentials (OIDC)
+        if: vars[env.AWS_ROLE_ARN_VAR] != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars[env.AWS_ROLE_ARN_VAR] }}
@@ -295,9 +296,20 @@ jobs:
 
       - name: Login to Amazon ECR
         id: ecr-login
+        if: vars[env.AWS_ROLE_ARN_VAR] != ''
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build + push ARM64 image
+      - name: Build local image for scanning (No AWS)
+        if: vars[env.AWS_ROLE_ARN_VAR] == ''
+        uses: docker/build-push-action@v5
+        with:
+          context: services/${{ matrix.service }}
+          push: false
+          load: true
+          tags: local/smartretailx-${{ matrix.service }}:${{ github.sha }}
+
+      - name: Build + push ARM64 image (AWS)
+        if: vars[env.AWS_ROLE_ARN_VAR] != ''
         uses: docker/build-push-action@v5
         with:
           context: services/${{ matrix.service }}
@@ -314,7 +326,7 @@ jobs:
       - name: Trivy scan (fail on CRITICAL)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.ecr-login.outputs.registry }}/smartretailx-${{ matrix.service }}:${{ github.sha }}
+          image-ref: ${{ vars[env.AWS_ROLE_ARN_VAR] != '' && format('{0}/smartretailx-{1}:{2}', steps.ecr-login.outputs.registry, matrix.service, github.sha) || format('local/smartretailx-{0}:{1}', matrix.service, github.sha) }}
           format: table
           exit-code: "1"
           severity: CRITICAL
@@ -342,12 +354,14 @@ jobs:
           - product-service
     steps:
       - name: Configure AWS credentials (OIDC)
+        if: vars[env.AWS_ROLE_ARN_VAR] != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars[env.AWS_ROLE_ARN_VAR] }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Force new deployment
+        if: vars[env.AWS_ROLE_ARN_VAR] != ''
         run: |
           aws ecs update-service \
             --cluster smartretailx-cluster \
@@ -355,6 +369,10 @@ jobs:
             --force-new-deployment \
             --query 'service.deployments[?status==`PRIMARY`].{taskDef:taskDefinition,rollout:rolloutState}' \
             --output table
+
+      - name: Skip deployment (No AWS credentials)
+        if: vars[env.AWS_ROLE_ARN_VAR] == ''
+        run: echo "Skipping ECS deployment because AWS_ROLE_ARN_VAR is not set."
 
   # ─── Stage 6: SPA build + S3 sync + CloudFront invalidation ──
   deploy-spa:
@@ -391,12 +409,14 @@ jobs:
         run: npm run build
 
       - name: Configure AWS credentials (OIDC)
+        if: vars[env.AWS_ROLE_ARN_VAR] != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars[env.AWS_ROLE_ARN_VAR] }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Sync build to S3
+        if: vars[env.AWS_ROLE_ARN_VAR] != ''
         run: |
           aws s3 sync frontend/dist "s3://${{ vars.SPA_BUCKET_NAME }}/" \
             --delete \
@@ -408,7 +428,12 @@ jobs:
             --cache-control "no-cache, no-store, must-revalidate"
 
       - name: CloudFront invalidation
+        if: vars[env.AWS_ROLE_ARN_VAR] != ''
         run: |
           aws cloudfront create-invalidation \
             --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
             --paths "/*"
+
+      - name: Skip AWS sync (No AWS credentials)
+        if: vars[env.AWS_ROLE_ARN_VAR] == ''
+        run: echo "Skipping S3 sync and CloudFront invalidation because AWS_ROLE_ARN_VAR is not set."
