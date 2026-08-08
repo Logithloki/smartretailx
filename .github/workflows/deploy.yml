@@ -79,7 +79,7 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-          pip install pytest pytest-cov httpx moto
+          pip install pytest pytest-cov httpx moto joserfc
 
       - name: pytest
         working-directory: services/${{ matrix.service }}
@@ -123,6 +123,9 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+
+      - name: Make init script executable
+        run: chmod +x localstack-init/01-setup.sh
 
       - name: Start services
         run: |
