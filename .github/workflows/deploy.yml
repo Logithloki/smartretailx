@@ -206,7 +206,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -H 'X-User-Id: test-admin' \
             -H 'X-User-Groups: admins' \
-            -d '{"name":"CI Test Product","price":"9.99","category":"test","description":"Integration test product"}' || echo 'FAIL')
+            -d '{"productId":"ci-test-product-001","productName":"CI Test Product","price":"9.99","category":"test","description":"Integration test product"}' || echo 'FAIL')
           echo "Product: $PRODUCT"
 
           PRODUCT_ID=$(echo $PRODUCT | python3 -c "import sys,json; print(json.load(sys.stdin)['productId'])")
