@@ -76,7 +76,6 @@ jobs:
       - name: Install dependencies
         working-directory: services/${{ matrix.service }}
         run: |
-          pip install -e ../common
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
@@ -126,7 +125,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Start services
-        run: docker compose up -d --build --wait
+        run: |
+          touch services/order-service/.env.local
+          touch services/inventory-service/.env.local
+          touch services/user-service/.env.local
+          touch services/product-service/.env.local
+          docker compose up -d --build --wait
         timeout-minutes: 5
 
       - name: Wait for services
