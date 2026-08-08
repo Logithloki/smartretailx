@@ -188,6 +188,16 @@ jobs:
 
       - name: Wait for services
         run: |
+          echo "Waiting for LocalStack setup script..."
+          for i in $(seq 1 30); do
+            if docker compose logs localstack | grep -q "SmartRetailX local environment ready"; then
+              echo "LocalStack init script completed."
+              break
+            fi
+            echo "Waiting for LocalStack... ($i/30)"
+            sleep 2
+          done
+
           for svc in 8001 8002 8003 8004; do
             for i in $(seq 1 30); do
               if curl -sf http://localhost:$svc/health > /dev/null 2>&1; then
@@ -204,26 +214,26 @@ jobs:
           TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjaS1hZG1pbiIsImNvZ25pdG86Z3JvdXBzIjpbImFkbWluIl19.sig"
 
           # Create a product
-          PRODUCT=$(curl -sf -X POST http://localhost:8004/v1/products \
+          PRODUCT=$(curl -s -X POST http://localhost:8004/v1/products \
             -H 'Content-Type: application/json' \
             -H "Authorization: Bearer $TOKEN" \
-            -d '{"productId":"ci-test-product-001","productName":"CI Test Product","price":"9.99","category":"test","description":"Integration test product"}' || echo 'FAIL')
+            -d '{"productId":"ci-test-product-001","productName":"CI Test Product","price":"9.99","category":"test","description":"Integration test product"}')
           echo "Product: $PRODUCT"
 
           PRODUCT_ID=$(echo $PRODUCT | python3 -c "import sys,json; print(json.load(sys.stdin)['productId'])")
           echo "Product ID: $PRODUCT_ID"
 
           # Verify product is retrievable
-          curl -sf http://localhost:8004/v1/products/$PRODUCT_ID \
+          curl -s http://localhost:8004/v1/products/$PRODUCT_ID \
             -H "Authorization: Bearer $TOKEN"
           echo
 
           # Place an order
-          ORDER=$(curl -sf -X POST http://localhost:8001/v1/orders \
+          ORDER=$(curl -s -X POST http://localhost:8001/v1/orders \
             -H 'Content-Type: application/json' \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Idempotency-Key: ci-test-001' \
-            -d "{\"items\":[{\"productId\":\"$PRODUCT_ID\",\"quantity\":1,\"unitPrice\":\"9.99\"}]}" || echo 'FAIL')
+            -d "{\"items\":[{\"productId\":\"$PRODUCT_ID\",\"quantity\":1,\"unitPrice\":\"9.99\"}]}")
           echo "Order: $ORDER"
 
           ORDER_ID=$(echo $ORDER | python3 -c "import sys,json; print(json.load(sys.stdin)['orderId'])")
@@ -233,7 +243,7 @@ jobs:
           sleep 5
 
           # Check order status
-          STATUS=$(curl -sf http://localhost:8001/v1/orders/$ORDER_ID \
+          STATUS=$(curl -s http://localhost:8001/v1/orders/$ORDER_ID \
             -H "Authorization: Bearer $TOKEN")
           echo "Order status: $STATUS"
           echo "Integration test complete!"
