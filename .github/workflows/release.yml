@@ -19,28 +19,28 @@ jobs:
 
   build-order:
     needs: pr-equivalent-gate
-    uses: ./.github/workflows/reusable/container-build.yml
+    uses: ./.github/workflows/reusable-container-build.yml
     with:
       service: order
       role_arn: ${{ vars.SMARTRETAILX_RELEASE_ROLE_ARN }}
 
   build-inventory:
     needs: pr-equivalent-gate
-    uses: ./.github/workflows/reusable/container-build.yml
+    uses: ./.github/workflows/reusable-container-build.yml
     with:
       service: inventory
       role_arn: ${{ vars.SMARTRETAILX_RELEASE_ROLE_ARN }}
 
   build-product:
     needs: pr-equivalent-gate
-    uses: ./.github/workflows/reusable/container-build.yml
+    uses: ./.github/workflows/reusable-container-build.yml
     with:
       service: product
       role_arn: ${{ vars.SMARTRETAILX_RELEASE_ROLE_ARN }}
 
   build-user:
     needs: pr-equivalent-gate
-    uses: ./.github/workflows/reusable/container-build.yml
+    uses: ./.github/workflows/reusable-container-build.yml
     with:
       service: user
       role_arn: ${{ vars.SMARTRETAILX_RELEASE_ROLE_ARN }}
@@ -139,7 +139,7 @@ jobs:
   deploy-baseline-order:
     if: vars.BASELINE_AUTO_DEPLOY == 'true'
     needs: [manifest, build-order]
-    uses: ./.github/workflows/reusable/deploy-ecs.yml
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: order
       image_digest: ${{ needs.build-order.outputs.digest }}
@@ -150,7 +150,7 @@ jobs:
   deploy-baseline-inventory:
     if: vars.BASELINE_AUTO_DEPLOY == 'true'
     needs: [manifest, build-inventory]
-    uses: ./.github/workflows/reusable/deploy-ecs.yml
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: inventory
       image_digest: ${{ needs.build-inventory.outputs.digest }}
@@ -162,7 +162,7 @@ jobs:
   deploy-baseline-product:
     if: vars.BASELINE_AUTO_DEPLOY == 'true'
     needs: [manifest, build-product]
-    uses: ./.github/workflows/reusable/deploy-ecs.yml
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: product
       image_digest: ${{ needs.build-product.outputs.digest }}
@@ -173,7 +173,7 @@ jobs:
   deploy-baseline-user:
     if: vars.BASELINE_AUTO_DEPLOY == 'true'
     needs: [manifest, build-user]
-    uses: ./.github/workflows/reusable/deploy-ecs.yml
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: user
       image_digest: ${{ needs.build-user.outputs.digest }}

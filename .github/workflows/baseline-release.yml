@@ -179,7 +179,7 @@ jobs:
           - { service: inventory, digest_output: inventory_digest, migrate: true }
           - { service: product, digest_output: product_digest, migrate: false }
           - { service: user, digest_output: user_digest, migrate: false }
-    uses: ./.github/workflows/reusable/deploy-ecs.yml
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: ${{ matrix.service }}
       image_digest: ${{ needs.release.outputs[matrix.digest_output] }}
@@ -202,7 +202,7 @@ jobs:
           - { component: ws-disconnect-lambda, suffix: ws-disconnect }
           - { component: ws-push-lambda, suffix: ws-push }
           - { component: order-outbox-publisher, suffix: order-outbox-publisher }
-    uses: ./.github/workflows/reusable/deploy-lambda.yml
+    uses: ./.github/workflows/reusable-deploy-lambda.yml
     with:
       component: ${{ matrix.component }}
       function_name: ${{ format('{0}-{1}', vars.SMARTRETAILX_PROJECT_NAME, matrix.suffix) }}
@@ -213,7 +213,7 @@ jobs:
 
   frontend:
     needs: [release, ecs, lambdas]
-    uses: ./.github/workflows/reusable/deploy-frontend.yml
+    uses: ./.github/workflows/reusable-deploy-frontend.yml
     with:
       release_run_id: ${{ inputs.release_run_id }}
       release_id: ${{ needs.release.outputs.release_id }}
@@ -231,7 +231,7 @@ jobs:
 
   verify:
     needs: frontend
-    uses: ./.github/workflows/reusable/smoke-tests.yml
+    uses: ./.github/workflows/reusable-smoke-tests.yml
     with:
       environment_name: development
       frontend_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}

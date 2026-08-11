@@ -30,19 +30,19 @@ jobs:
           - ws-disconnect-lambda
           - ws-push-lambda
           - order-outbox-publisher
-    uses: ./.github/workflows/reusable/python-quality.yml
+    uses: ./.github/workflows/reusable-python-quality.yml
     with:
       service: ${{ matrix.service }}
       coverage_threshold: 60
 
   frontend:
-    uses: ./.github/workflows/reusable/frontend-quality.yml
+    uses: ./.github/workflows/reusable-frontend-quality.yml
 
   terraform:
-    uses: ./.github/workflows/reusable/terraform-check.yml
+    uses: ./.github/workflows/reusable-terraform-check.yml
 
   integration:
-    uses: ./.github/workflows/reusable/integration-tests.yml
+    uses: ./.github/workflows/reusable-integration-tests.yml
 
   secret-scan:
     runs-on: ubuntu-latest
