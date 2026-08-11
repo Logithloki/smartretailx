@@ -9,8 +9,10 @@ relational.
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime
 from decimal import Decimal
+from functools import wraps
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -19,6 +21,16 @@ from .events import fulfilment_status_changed, order_cancel_requested, order_cre
 from .models import FulfilmentStatus, Order, OrderItem, OrderStatus, utcnow
 
 logger = logging.getLogger(__name__)
+_TRANSITION_LOCK = threading.Lock()
+
+
+def _serialize_transition(func):
+    """Serialize local competing transitions; DynamoDB conditions remain authoritative."""
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with _TRANSITION_LOCK:
+            return func(*args, **kwargs)
+    return wrapped
 
 
 class OrderNotFound(Exception):
@@ -229,6 +241,7 @@ class OrderRepository:
             raise OrderNotFound(order_id) from exc
         return _from_item(response["Attributes"])
 
+    @_serialize_transition
     def set_fulfilment(
         self,
         order_id: str,
@@ -286,6 +299,7 @@ class OrderRepository:
             raise OrderNotPending(order_id) from exc
         return updated
 
+    @_serialize_transition
     def request_cancellation(self, order_id: str, user_id: str, correlation_id: str) -> Order:
         """Race-safe CONFIRMED/PACKING-or-earlier -> CANCEL_PENDING transition."""
         current = self.get(order_id)
