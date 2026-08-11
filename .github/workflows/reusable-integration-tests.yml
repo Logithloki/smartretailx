@@ -121,7 +121,16 @@ jobs:
                 docker compose exec -T localstack awslocal dynamodb get-item \
                 --table-name smartretailx-products --key '{"productId":{"S":"prod-laptop-001"}}' \
                 --region eu-west-1 --query 'Item.productId.S' --output text 2>/dev/null | grep -qx 'prod-laptop-001'; then
-                break
+                # The price authority queries this GSI; table ACTIVE is not
+                # enough while LocalStack is still bringing the index online.
+                if docker compose exec -T localstack awslocal dynamodb query \
+                  --table-name smartretailx-promotions --index-name enabled-startsAt-index \
+                  --key-condition-expression '#enabled = :enabled AND startsAt <= :now' \
+                  --expression-attribute-names '{"#enabled":"enabled"}' \
+                  --expression-attribute-values '{":enabled":{"S":"true"},":now":{"S":"9999-12-31T23:59:59+00:00"}}' \
+                  --region eu-west-1 >/dev/null 2>&1; then
+                  break
+                fi
               fi
             fi
             if [[ "$attempt" == "30" ]]; then
@@ -160,7 +169,12 @@ jobs:
             if [[ "$status" == CONFIRMED || "$status" == REJECTED ]]; then terminal=true; break; fi
             sleep 2
           done
-          $terminal || { echo "order remained non-terminal"; exit 1; }
+          if ! $terminal; then
+            echo "order remained non-terminal: $order"
+            docker compose ps
+            docker compose logs --no-color --tail=300 order-service inventory-service localstack
+            exit 1
+          fi
           test "$status" = CONFIRMED
       - name: Capture container logs
         if: always()
