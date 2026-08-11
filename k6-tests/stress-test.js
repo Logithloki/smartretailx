@@ -1,8 +1,9 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { BASE_URL, getHeaders } from './config.js';
+import { BASE_URL, getHeaders, validateConfig } from './config.js';
 
 export const options = {
+  summaryTrendStats: ['min', 'med', 'avg', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],
   stages: [
     { duration: '2m', target: 10 },
     { duration: '2m', target: 50 },
@@ -22,16 +23,20 @@ export const options = {
   },
 };
 
+export function setup() {
+  return validateConfig();
+}
+
 export default function () {
   const rand = Math.random();
   
   if (rand < 0.7) {
-    const res = http.get(`${BASE_URL}/api/v1/products`, { headers: getHeaders() });
+    const res = http.get(`${BASE_URL}/v1/products`, { headers: getHeaders() });
     check(res, { 'status is 200': (r) => r.status === 200 });
   } else {
     // Pick a hardcoded ID or random UUID to stress the DB without needing a list fetch
     const randomId = `prod-${Math.floor(Math.random() * 100)}`;
-    const res = http.get(`${BASE_URL}/api/v1/products/${randomId}`, { headers: getHeaders() });
+    const res = http.get(`${BASE_URL}/v1/products/${randomId}`, { headers: getHeaders() });
     // Don't strictly check for 200 because product might not exist, check for valid API response
     check(res, { 'status is valid': (r) => r.status === 200 || r.status === 404 });
   }

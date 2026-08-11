@@ -1,0 +1,56 @@
+# Deliberate demo-scale exceptions. Checkov remains blocking for every other
+# rule; each exception maps to a cost/architecture ADR in
+# docs/architecture-and-pipeline.md and must be revisited before real commerce.
+framework:
+  - terraform
+compact: true
+quiet: true
+skip-check:
+  # AWS-managed encryption is used; customer-managed KMS keys add cost/ops.
+  - CKV_AWS_119
+  - CKV_AWS_136
+  - CKV_AWS_145
+  - CKV_AWS_149
+  - CKV_AWS_158
+  - CKV_AWS_173
+  - CKV_AWS_297
+  - CKV_AWS_327
+  # Seven-year/one-year retention is disproportionate to assessed demo data.
+  - CKV_AWS_338
+  # Lambda controls rejected for short-lived, event-driven demo functions.
+  - CKV_AWS_115
+  - CKV_AWS_116
+  - CKV_AWS_117
+  - CKV_AWS_272
+  # Private internal ALB/VPC Link uses HTTP; TLS terminates at CloudFront/API GW.
+  - CKV_AWS_103
+  - CKV_AWS_378
+  - CKV2_AWS_20
+  # Default CloudFront certificate: no paid custom domain (ADR/lecturer scope).
+  - CKV2_AWS_42
+  # Checkov does not recognise the TLS setting with CloudFront's default cert.
+  - CKV_AWS_174
+  # Demo-scale edge/storage features deferred with explicit DR limitations.
+  - CKV_AWS_18
+  - CKV_AWS_86
+  - CKV_AWS_144
+  - CKV_AWS_310
+  - CKV_AWS_374
+  - CKV2_AWS_47
+  - CKV2_AWS_62
+  # Costed operational controls not required for the demo sizing.
+  - CKV_AWS_118
+  - CKV_AWS_162
+  - CKV_AWS_353
+  - CKV2_AWS_8
+  - CKV2_AWS_11
+  - CKV2_AWS_27
+  - CKV2_AWS_51
+  - CKV2_AWS_57
+  # Public subnet/NAT topology and controlled egress are settled ADR-04 choices.
+  - CKV_AWS_23
+  - CKV_AWS_130
+  - CKV_AWS_355
+  - CKV_AWS_382
+  # Development-only Cognito hook is not part of the production release path.
+  - CKV_AWS_50

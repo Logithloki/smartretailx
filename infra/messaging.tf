@@ -4,6 +4,7 @@
 resource "aws_sqs_queue" "orders_dlq" {
   name                      = "${var.project_name}-orders-dlq"
   message_retention_seconds = 1209600
+  sqs_managed_sse_enabled   = true
 
   tags = {
     Name = "${var.project_name}-orders-dlq"
@@ -15,6 +16,7 @@ resource "aws_sqs_queue" "orders" {
   visibility_timeout_seconds = 30
   message_retention_seconds  = 86400
   receive_wait_time_seconds  = 20 # long polling (backlog item 8)
+  sqs_managed_sse_enabled    = true
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.orders_dlq.arn
@@ -26,8 +28,19 @@ resource "aws_sqs_queue" "orders" {
   }
 }
 
+resource "aws_sqs_queue" "order_outbox_publisher_dlq" {
+  name                      = "${var.project_name}-order-outbox-publisher-dlq"
+  message_retention_seconds = 1209600
+  sqs_managed_sse_enabled   = true
+
+  tags = {
+    Name = "${var.project_name}-order-outbox-publisher-dlq"
+  }
+}
+
 resource "aws_sns_topic" "order_confirmed" {
-  name = "${var.project_name}-order-confirmed"
+  name              = "${var.project_name}-order-confirmed"
+  kms_master_key_id = "alias/aws/sns"
 
   tags = {
     Name = "${var.project_name}-order-confirmed"
@@ -62,6 +75,7 @@ resource "aws_sqs_queue" "order_events" {
   visibility_timeout_seconds = 30
   message_retention_seconds  = 86400
   receive_wait_time_seconds  = 20
+  sqs_managed_sse_enabled    = true
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.orders_dlq.arn
@@ -98,6 +112,6 @@ resource "aws_sns_topic_subscription" "order_events" {
   # so the consumer is not billed or woken for traffic it would discard.
   # Week 7 adds loadTest exclusion here to keep k6 runs out of SES.
   filter_policy = jsonencode({
-    eventType = ["order-confirmed", "order-rejected"]
+    eventType = ["order-confirmed", "order-rejected", "order-cancelled"]
   })
 }

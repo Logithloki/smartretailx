@@ -7,13 +7,13 @@ import boto3
 import pytest
 
 from app.compensation import CompensationConsumer, unwrap_sns_envelope
-from app.models import OrderStatus
+from app.models import FulfilmentStatus, OrderStatus
 
 from conftest import auth_header
 
 
 def _payload() -> dict:
-    return {"items": [{"productId": "p1", "quantity": 1, "unitPrice": "10.00"}]}
+    return {"items": [{"productId": "prod-laptop-001", "quantity": 1}]}
 
 
 def _place_order(client) -> str:
@@ -56,13 +56,13 @@ def test_order_rejected_compensates_the_order(client, settings, repository):
     handled = consumer.handle(_sns_envelope({
         "eventType": "order-rejected",
         "orderId": order_id,
-        "reason": "insufficient stock for p1",
+        "reason": "insufficient stock for prod-laptop-001",
     }))
 
     assert handled is True
     order = repository.get(order_id)
     assert order.status is OrderStatus.REJECTED
-    assert order.statusReason == "insufficient stock for p1"
+    assert order.statusReason == "insufficient stock for prod-laptop-001"
 
 
 def test_order_confirmed_completes_the_order(client, settings, repository):
@@ -72,6 +72,46 @@ def test_order_confirmed_completes_the_order(client, settings, repository):
     consumer.handle(_sns_envelope({"eventType": "order-confirmed", "orderId": order_id}))
 
     assert repository.get(order_id).status is OrderStatus.CONFIRMED
+
+
+def test_cancel_pending_completion_transitions_to_cancelled_once(client, settings, repository):
+    order_id = _place_order(client)
+    repository.set_status(order_id, OrderStatus.CONFIRMED, only_if_pending=True)
+    repository.request_cancellation(order_id, "user-1", "corr-cancel")
+    consumer = CompensationConsumer(settings, repository=repository)
+
+    assert consumer.handle(_sns_envelope({"eventType": "order-cancelled", "orderId": order_id})) is True
+    assert repository.get(order_id).status is OrderStatus.CANCELLED
+    assert consumer.handle(_sns_envelope({"eventType": "order-cancelled", "orderId": order_id})) is True
+    assert repository.get(order_id).status is OrderStatus.CANCELLED
+
+
+@pytest.mark.parametrize("stale_status", [
+    OrderStatus.PENDING,
+    OrderStatus.CONFIRMED,
+    OrderStatus.REJECTED,
+])
+def test_late_cancel_completion_cannot_overwrite_stale_order(client, settings, repository, stale_status):
+    order_id = _place_order(client)
+    if stale_status is not OrderStatus.PENDING:
+        repository.set_status(order_id, stale_status, only_if_pending=True)
+    consumer = CompensationConsumer(settings, repository=repository)
+
+    assert consumer.handle(_sns_envelope({"eventType": "order-cancelled", "orderId": order_id})) is True
+    assert repository.get(order_id).status is stale_status
+
+
+def test_late_cancel_completion_cannot_overwrite_dispatched_order(client, settings, repository):
+    order_id = _place_order(client)
+    repository.set_status(order_id, OrderStatus.CONFIRMED, only_if_pending=True)
+    repository.set_fulfilment(order_id, FulfilmentStatus.NOT_STARTED, FulfilmentStatus.PACKING)
+    repository.set_fulfilment(order_id, FulfilmentStatus.PACKING, FulfilmentStatus.DISPATCHED)
+    consumer = CompensationConsumer(settings, repository=repository)
+
+    assert consumer.handle(_sns_envelope({"eventType": "order-cancelled", "orderId": order_id})) is True
+    order = repository.get(order_id)
+    assert order.status is OrderStatus.CONFIRMED
+    assert order.fulfilmentStatus is FulfilmentStatus.DISPATCHED
 
 
 # --------------------------------------------------------------------------

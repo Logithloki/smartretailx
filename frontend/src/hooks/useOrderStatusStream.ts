@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { WEBSOCKET_URL } from "../auth-config";
+import { getRuntimeConfig } from "../config/runtime-config";
 
 /*
  * Live-order-status subscriber (backlog item 27, marking Task 4).
@@ -32,14 +32,76 @@ import { WEBSOCKET_URL } from "../auth-config";
 export type StatusUpdate = {
   type: "order.status-changed";
   orderId: string;
-  status: "PENDING" | "CONFIRMED" | "REJECTED";
+  status: "PENDING" | "CONFIRMED" | "REJECTED" | "CANCEL_PENDING" | "CANCELLED";
+  correlationId?: string | null;
 };
+
+export type FulfilmentUpdate = {
+  type: "order.fulfilment-status-changed";
+  orderId: string;
+  fulfilmentStatus: "NOT_STARTED" | "PACKING" | "DISPATCHED" | "OUT_FOR_DELIVERY" | "DELIVERED";
+  correlationId?: string | null;
+};
+
+export type CataloguePriceRefresh = {
+  type: "catalogue.price-refresh";
+  productIds: string[];
+  revision: number;
+};
+
+export type RealtimeUpdate = StatusUpdate | FulfilmentUpdate | CataloguePriceRefresh;
+
+const ORDER_STATUSES = new Set(["PENDING", "CONFIRMED", "REJECTED", "CANCEL_PENDING", "CANCELLED"]);
+const FULFILMENT_STATUSES = new Set(["NOT_STARTED", "PACKING", "DISPATCHED", "OUT_FOR_DELIVERY", "DELIVERED"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: Set<string>): boolean {
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+export function parseRealtimeMessage(raw: string): RealtimeUpdate | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || typeof value.type !== "string") return null;
+
+  if (value.type === "catalogue.price-refresh") {
+    if (!hasOnlyKeys(value, new Set(["type", "productIds", "revision"]))) return null;
+    if (!Array.isArray(value.productIds) || !value.productIds.every((item) => typeof item === "string" && item.length > 0)) {
+      return null;
+    }
+    if (!Number.isSafeInteger(value.revision) || (value.revision as number) < 0) return null;
+    return value as CataloguePriceRefresh;
+  }
+
+  if (value.type === "order.status-changed") {
+    if (!hasOnlyKeys(value, new Set(["type", "orderId", "status", "correlationId"]))) return null;
+    if (typeof value.orderId !== "string" || !ORDER_STATUSES.has(String(value.status))) return null;
+    if (value.correlationId !== undefined && value.correlationId !== null && typeof value.correlationId !== "string") return null;
+    return value as StatusUpdate;
+  }
+
+  if (value.type === "order.fulfilment-status-changed") {
+    if (!hasOnlyKeys(value, new Set(["type", "orderId", "fulfilmentStatus", "correlationId"]))) return null;
+    if (typeof value.orderId !== "string" || !FULFILMENT_STATUSES.has(String(value.fulfilmentStatus))) return null;
+    if (value.correlationId !== undefined && value.correlationId !== null && typeof value.correlationId !== "string") return null;
+    return value as FulfilmentUpdate;
+  }
+
+  return null;
+}
 
 export type WsPhase = "connecting" | "connected" | "dropped";
 
 export function useOrderStatusStream(
   accessToken: string | undefined,
-  onUpdate: (update: StatusUpdate) => void,
+  onUpdate: (update: RealtimeUpdate) => void,
 ): WsPhase {
   const [phase, setPhase] = useState<WsPhase>("connecting");
 
@@ -64,7 +126,7 @@ export function useOrderStatusStream(
     function connect() {
       if (cancelledRef.current) return;
       setPhase("connecting");
-      const url = `${WEBSOCKET_URL}?token=${encodeURIComponent(accessToken!)}`;
+      const url = `${getRuntimeConfig().websocketUrl}?token=${encodeURIComponent(accessToken!)}`;
       const socket = new WebSocket(url);
       socketRef.current = socket;
 
@@ -74,14 +136,8 @@ export function useOrderStatusStream(
       });
 
       socket.addEventListener("message", (event) => {
-        try {
-          const parsed = JSON.parse(event.data) as StatusUpdate;
-          if (parsed.type === "order.status-changed") {
-            onUpdateRef.current(parsed);
-          }
-        } catch {
-          // Non-JSON server heartbeat / diagnostic. Ignore.
-        }
+        const parsed = typeof event.data === "string" ? parseRealtimeMessage(event.data) : null;
+        if (parsed) onUpdateRef.current(parsed);
       });
 
       socket.addEventListener("close", () => {

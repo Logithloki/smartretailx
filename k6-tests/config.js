@@ -1,7 +1,15 @@
-import { check } from 'k6';
+export const BASE_URL = (__ENV.BASE_URL || '').replace(/\/$/, '');
+export const AUTH_TOKEN = __ENV.AUTH_TOKEN || '';
 
-export const BASE_URL = __ENV.BASE_URL || 'https://example.cloudfront.net';
-export const AUTH_TOKEN = __ENV.AUTH_TOKEN || 'MISSING_TOKEN';
+export function validateConfig() {
+  if (!BASE_URL.startsWith('https://') && !BASE_URL.startsWith('http://localhost')) {
+    throw new Error('BASE_URL must be an HTTPS origin (or localhost)');
+  }
+  if (!AUTH_TOKEN || AUTH_TOKEN === 'MISSING_TOKEN') {
+    throw new Error('AUTH_TOKEN must contain a current Cognito access token');
+  }
+  return { startedAt: new Date().toISOString() };
+}
 
 export const getHeaders = () => ({
   'Content-Type': 'application/json',
@@ -16,6 +24,11 @@ export function checkResponse(res, expectedStatus = 200) {
   return success;
 }
 
-export function getRandomElement(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
+export function productsFrom(res) {
+  try {
+    const body = res.json();
+    return Array.isArray(body.products) ? body.products : [];
+  } catch (_) {
+    return [];
+  }
 }

@@ -4,7 +4,7 @@
 # lecturer ruling H.2). Dual-origin CloudFront:
 #
 #   /       -> S3 bucket (React build artefacts, OAC-signed)
-#   /api/*  -> HTTP API v2 (JWT authoriser gate)
+#   /v1/*   -> HTTP API v2 (JWT authoriser gate)
 #
 # Component status: **needs CW-3b validation on real AWS.** CloudFront
 # distributions take 15-20 min to create/delete on both directions; per
@@ -13,9 +13,9 @@
 #
 # ─── CRITICAL correctness point (Addendum G.1.1 in the guide) ─────
 # CloudFront's default managed cache/origin-request policies strip the
-# Authorization header before it reaches the origin. Every /api/* call
+# Authorization header before it reaches the origin. Every /v1/* call
 # would then 401 mysteriously because API Gateway sees no bearer token.
-# The /api/* behaviour below MUST use origin request policy
+# The /v1/* behaviour below MUST use origin request policy
 # `AllViewerExceptHostHeader` (forwards every incoming header except
 # Host, which CloudFront must rewrite for the origin to accept it), and
 # cache policy `CachingDisabled` (dynamic API responses must never be
@@ -29,7 +29,7 @@ resource "aws_s3_bucket" "spa" {
   # Bucket names are global; suffix with the account id so this apply is
   # not blocked by an unrelated account already having grabbed the name.
   bucket        = "${var.project_name}-spa-${data.aws_caller_identity.current.account_id}"
-  force_destroy = true
+  force_destroy = var.environment_name != "production"
 
   tags = {
     Name = "${var.project_name}-spa"
@@ -61,6 +61,47 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "spa" {
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
+    }
+  }
+
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "spa" {
+  bucket = aws_s3_bucket.spa.id
+
+  rule {
+    id     = "expire-old-release-versions"
+    status = "Enabled"
+    filter {}
+    noncurrent_version_expiration {
+      noncurrent_days = var.environment_name == "production" ? 90 : 30
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+resource "aws_cloudwatch_log_group" "waf" {
+  provider          = aws.us_east_1
+  name              = "aws-waf-logs-${var.project_name}-cloudfront"
+  retention_in_days = var.environment_name == "production" ? 30 : 7
+}
+
+resource "aws_wafv2_web_acl_logging_configuration" "cloudfront" {
+  provider                = aws.us_east_1
+  resource_arn            = aws_wafv2_web_acl.cloudfront.arn
+  log_destination_configs = [aws_cloudwatch_log_group.waf.arn]
+
+  redacted_fields {
+    single_header {
+      name = "authorization"
+    }
+  }
+
+  redacted_fields {
+    single_header {
+      name = "cookie"
     }
   }
 }
@@ -106,7 +147,7 @@ data "aws_cloudfront_response_headers_policy" "security_headers" {
 resource "aws_cloudfront_distribution" "main" {
   enabled             = true
   is_ipv6_enabled     = true
-  comment             = "SmartRetailX SPA + /api/*"
+  comment             = "SmartRetailX SPA + /v1/*"
   default_root_object = "index.html"
   # Cheapest global class - eu, us, ca. Full-world PoPs cost more and no
   # marker will grade harder because the demo has faster p95 in Tokyo.
@@ -124,7 +165,7 @@ resource "aws_cloudfront_distribution" "main" {
     origin_access_control_id = aws_cloudfront_origin_access_control.spa.id
   }
 
-  # ─── HTTP API origin (dynamic /api/*) ───────────────────────
+  # ─── HTTP API origin (dynamic /v1/*) ────────────────────────
   # execute-api endpoints require HTTPS and TLS 1.2+; the custom origin
   # config below enforces that end-to-end (viewer -> CF -> API GW is
   # HTTPS everywhere; no plaintext hop).
@@ -153,19 +194,15 @@ resource "aws_cloudfront_distribution" "main" {
     compress                   = true
   }
 
-  # ─── /api/* behaviour: proxy to the HTTP API, NO caching ────
+  # ─── /v1/* behaviour: proxy to the HTTP API, NO caching ─────
   ordered_cache_behavior {
-    path_pattern           = "/api/*"
+    path_pattern           = "/v1/*"
     target_origin_id       = "api-gw"
     viewer_protocol_policy = "redirect-to-https"
 
-    # API accepts every method; caching only applies to safe reads.
     allowed_methods = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     cached_methods  = ["GET", "HEAD"]
 
-    # THE two policies that keep JWT auth working:
-    #   AllViewerExceptHostHeader -> forwards Authorization
-    #   CachingDisabled           -> never caches authenticated responses
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
     compress                 = true
@@ -191,21 +228,17 @@ resource "aws_cloudfront_distribution" "main" {
   viewer_certificate {
     # No custom domain (guide G.2 confirms Route 53 is design-intent
     # only). CloudFront ships every distribution with a *.cloudfront.net
-    # certificate signed by Amazon; that is enough for the demo.
+    # certificate signed by Amazon; that is enough for the demo. The default
+    # certificate is represented by TLSv1 in the CloudFront API/provider;
+    # selectable stronger security policies require a custom certificate.
     cloudfront_default_certificate = true
-    minimum_protocol_version       = "TLSv1.2_2021"
+    minimum_protocol_version       = "TLSv1"
   }
 
   restrictions {
     geo_restriction {
       restriction_type = "none"
     }
-  }
-
-  logging_config {
-    include_cookies = false
-    bucket          = aws_s3_bucket.spa.bucket_regional_domain_name
-    prefix          = "cloudfront-logs/"
   }
 
   tags = {
@@ -310,6 +343,25 @@ resource "aws_wafv2_web_acl" "cloudfront" {
       sampled_requests_enabled   = true
       cloudwatch_metrics_enabled = true
       metric_name                = "sqli"
+    }
+  }
+
+  rule {
+    name     = "PerIpRateLimit"
+    priority = 4
+    action {
+      block {}
+    }
+    statement {
+      rate_based_statement {
+        aggregate_key_type = "IP"
+        limit              = 2000
+      }
+    }
+    visibility_config {
+      sampled_requests_enabled   = true
+      cloudwatch_metrics_enabled = true
+      metric_name                = "per-ip-rate-limit"
     }
   }
 

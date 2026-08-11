@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy import select, text, update
+from srx_common import new_event
 
-from .database import StockItem, utcnow
-from .models import ReservationLine, ReservationResult, StockLevel
+from .database import InventoryOutboxEvent, ProcessedEvent, ReservationLedger, StockItem, utcnow
+from .models import ProcessingOutcome, ReservationLine, ReservationResult, StockLevel
 
 logger = logging.getLogger(__name__)
 
@@ -70,34 +71,151 @@ class StockRepository:
 
         with self._session_factory() as session:
             try:
-                for line in lines:
-                    result = session.execute(
-                        update(StockItem)
-                        .where(
-                            StockItem.product_id == line.productId,
-                            StockItem.quantity >= line.quantity,
-                        )
-                        .values(quantity=StockItem.quantity - line.quantity, updated_at=utcnow())
-                    )
-                    if result.rowcount == 0:
-                        session.rollback()
-                        # Distinguish "no such product" from "not enough of it";
-                        # the customer-facing reason differs.
-                        exists = session.get(StockItem, line.productId) is not None
-                        reason = (
-                            f"insufficient stock for {line.productId}"
-                            if exists
-                            else f"unknown product {line.productId}"
-                        )
-                        logger.info("reservation refused", extra={"reason": reason})
-                        return ReservationResult.failure(reason)
-                session.commit()
+                result = self._reserve_in_session(session, lines)
+                if result.ok:
+                    session.commit()
+                else:
+                    session.rollback()
+                return result
             except Exception:
                 session.rollback()
                 raise
 
         logger.info("reservation committed", extra={"lines": len(lines)})
+        return result
+
+    @staticmethod
+    def _reserve_in_session(session, lines: list[ReservationLine]) -> ReservationResult:
+        if not lines:
+            return ReservationResult.failure("order contained no items")
+        for line in lines:
+            result = session.execute(
+                update(StockItem)
+                .where(
+                    StockItem.product_id == line.productId,
+                    StockItem.quantity >= line.quantity,
+                )
+                .values(quantity=StockItem.quantity - line.quantity, updated_at=utcnow())
+            )
+            if result.rowcount == 0:
+                exists = session.get(StockItem, line.productId) is not None
+                reason = (
+                    f"insufficient stock for {line.productId}"
+                    if exists
+                    else f"unknown product {line.productId}"
+                )
+                return ReservationResult.failure(reason)
         return ReservationResult.success()
+
+    def process_order(
+        self,
+        event_id: str,
+        order_id: str,
+        user_id: str | None,
+        lines: list[ReservationLine],
+        passthrough: dict,
+    ) -> ProcessingOutcome:
+        """Commit stock, inbox receipt, and outcome outbox in one transaction."""
+        outcome_id = f"inventory-outcome#{event_id}"
+        with self._session_factory() as session:
+            existing = session.get(ProcessedEvent, event_id)
+            if existing is not None:
+                outbox = session.get(InventoryOutboxEvent, outcome_id)
+                return ProcessingOutcome(
+                    eventType=outbox.event_type if outbox else "duplicate",
+                    duplicate=True,
+                    reason=(outbox.payload.get("reason") if outbox else None),
+                )
+
+            result = self._reserve_in_session(session, lines)
+            event_type = "order-confirmed" if result.ok else "order-rejected"
+            business_payload = {
+                "orderId": order_id,
+                "userId": user_id,
+                "userEmail": passthrough.get("userEmail"),
+                "loadTest": bool(passthrough.get("loadTest", False)),
+            }
+            if result.reason:
+                business_payload["reason"] = result.reason
+            payload = new_event(
+                event_type=event_type,
+                event_id=outcome_id,
+                aggregate_id=order_id,
+                correlation_id=passthrough["correlationId"],
+                causation_id=event_id,
+                trace_id=passthrough.get("traceId"),
+                payload=business_payload,
+            ).model_dump(mode="json")
+
+            if result.ok:
+                for line in lines:
+                    session.add(ReservationLedger(
+                        order_id=order_id, product_id=line.productId, quantity=line.quantity, state="RESERVED"
+                    ))
+            session.add(ProcessedEvent(event_id=event_id))
+            session.add(
+                InventoryOutboxEvent(
+                    event_id=outcome_id,
+                    event_type=event_type,
+                    aggregate_id=order_id,
+                    payload=payload,
+                )
+            )
+            session.commit()
+            return ProcessingOutcome(eventType=event_type, reason=result.reason)
+
+    def release_reservation(self, order_id: str, correlation_id: str) -> ProcessingOutcome:
+        """Release only persisted RESERVED rows, retaining RELEASED evidence."""
+        outcome_id = f"inventory-cancelled#{order_id}"
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(ReservationLedger).where(ReservationLedger.order_id == order_id).with_for_update()
+            ).scalars().all()
+            if not rows or all(row.state == "RELEASED" for row in rows):
+                return ProcessingOutcome(eventType="order-cancelled", duplicate=True)
+            reserved = [row for row in rows if row.state == "RESERVED"]
+            for row in reserved:
+                session.execute(
+                    update(StockItem).where(StockItem.product_id == row.product_id).values(
+                        quantity=StockItem.quantity + row.quantity, updated_at=utcnow()
+                    )
+                )
+                row.state = "RELEASED"
+                row.released_at = utcnow()
+            payload = new_event(
+                event_type="order-cancelled", event_id=outcome_id, aggregate_id=order_id,
+                correlation_id=correlation_id, payload={"orderId": order_id},
+            ).model_dump(mode="json")
+            session.merge(InventoryOutboxEvent(
+                event_id=outcome_id, event_type="order-cancelled", aggregate_id=order_id, payload=payload
+            ))
+            session.commit()
+            return ProcessingOutcome(eventType="order-cancelled")
+
+    def pending_outbox(self, limit: int = 25) -> list[InventoryOutboxEvent]:
+        with self._session_factory() as session:
+            return list(
+                session.execute(
+                    select(InventoryOutboxEvent)
+                    .where(InventoryOutboxEvent.state == "PENDING")
+                    .order_by(InventoryOutboxEvent.created_at)
+                    .limit(limit)
+                )
+                .scalars()
+                .all()
+            )
+
+    def mark_outbox_published(self, event_id: str, message_id: str) -> None:
+        with self._session_factory() as session:
+            session.execute(
+                update(InventoryOutboxEvent)
+                .where(
+                    InventoryOutboxEvent.event_id == event_id,
+                    InventoryOutboxEvent.state == "PENDING",
+                )
+                .values(state="PUBLISHED", published_at=utcnow(), message_id=message_id)
+            )
+            session.commit()
 
     def release(self, lines: list[ReservationLine]) -> None:
         """Put stock back - used if a later step of the saga fails after the

@@ -21,6 +21,8 @@ import logging
 import threading
 
 import boto3
+from pydantic import ValidationError
+from srx_common import EventEnvelope, set_correlation_id
 
 from .models import OrderStatus
 from .services import OrderNotFound, OrderNotPending, OrderRepository
@@ -30,6 +32,7 @@ logger = logging.getLogger(__name__)
 STATUS_FOR_EVENT = {
     "order-confirmed": OrderStatus.CONFIRMED,
     "order-rejected": OrderStatus.REJECTED,
+    "order-cancelled": OrderStatus.CANCELLED,
 }
 
 
@@ -69,8 +72,20 @@ class CompensationConsumer:
             logger.warning("discarding unparseable message")
             return True
 
-        event_type = event.get("eventType")
-        order_id = event.get("orderId")
+        if event.get("eventVersion") is not None:
+            try:
+                envelope = EventEnvelope.model_validate(event)
+            except ValidationError:
+                logger.warning("invalid saga event contract; leaving for DLQ")
+                return False
+            event_type = envelope.eventType
+            order_id = envelope.aggregateId
+            event = envelope.payload
+            set_correlation_id(envelope.correlationId)
+        else:
+            # Temporary compatibility for already queued pre-envelope events.
+            event_type = event.get("eventType")
+            order_id = event.get("orderId")
 
         if event_type not in STATUS_FOR_EVENT:
             logger.debug("ignoring event", extra={"eventType": event_type})
@@ -82,10 +97,11 @@ class CompensationConsumer:
         target = STATUS_FOR_EVENT[event_type]
         try:
             order = self._repo.set_status(
-                order_id,
-                target,
-                reason=event.get("reason"),
-                only_if_pending=True,
+                order_id, target, reason=event.get("reason"),
+                only_if_pending=event_type != "order-cancelled",
+                expected_status=(
+                    OrderStatus.CANCEL_PENDING if event_type == "order-cancelled" else None
+                ),
             )
         except OrderNotPending:
             # Duplicate or late delivery. SQS is at-least-once, so this is

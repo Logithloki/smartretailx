@@ -6,6 +6,7 @@ import boto3
 import pybreaker
 import pytest
 from fastapi.testclient import TestClient
+from srx_common import new_event
 
 from app.consumer import InventoryConsumer
 from app.events import SagaEventPublisher
@@ -16,12 +17,17 @@ from conftest import auth_header
 
 
 def command(order_id: str = "ord-1", product_id: str = "prod-laptop-001", quantity: int = 2) -> str:
-    return json.dumps({
-        "eventType": "order-created",
-        "orderId": order_id,
-        "userId": "alice",
-        "items": [{"productId": product_id, "quantity": quantity, "unitPrice": "10.00"}],
-    })
+    return new_event(
+        event_type="order-created",
+        event_id=f"order-created#{order_id}",
+        aggregate_id=order_id,
+        correlation_id=f"correlation-{order_id}",
+        payload={
+            "orderId": order_id,
+            "userId": "alice",
+            "items": [{"productId": product_id, "quantity": quantity, "unitPrice": "10.00"}],
+        },
+    ).model_dump_json()
 
 
 class RecordingPublisher:
@@ -130,17 +136,19 @@ def test_unexpected_error_requeues_the_command(settings, stock):
 
 @pytest.mark.parametrize(
     "body",
-    ["not json", json.dumps({"eventType": "something-else"}), json.dumps({"eventType": "order-created"})],
+    ["not json", json.dumps({"eventType": "order-created"})],
 )
-def test_unactionable_commands_are_acked(settings, stock, body):
+def test_invalid_contracts_are_left_for_dlq(settings, stock, body):
     consumer = InventoryConsumer(settings, stock, publisher=RecordingPublisher())
-    assert consumer.handle(body) is True
+    assert consumer.handle(body) is False
 
 
 def test_command_with_no_items_is_rejected_not_dropped(settings, stock):
     publisher = RecordingPublisher()
     consumer = InventoryConsumer(settings, stock, publisher=publisher)
-    body = json.dumps({"eventType": "order-created", "orderId": "ord-x", "items": []})
+    event = json.loads(command(order_id="ord-x"))
+    event["payload"]["items"] = []
+    body = json.dumps(event)
 
     assert consumer.handle(body) is True
     assert publisher.events[0][0] == "order-rejected"
@@ -225,3 +233,10 @@ def test_negative_adjustment_is_rejected_by_validation(client):
 
 def test_health_is_public(client):
     assert client.get("/health").status_code == 200
+
+
+def test_openapi_contract_exposes_canonical_inventory_routes(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/v1/inventory" in paths
+    assert "/v1/inventory/{product_id}" in paths
+    assert all(not path.startswith("/api/") for path in paths)

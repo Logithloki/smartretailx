@@ -14,8 +14,10 @@ import threading
 
 import boto3
 import pybreaker
+from pydantic import ValidationError
+from srx_common import EventEnvelope, set_correlation_id
 
-from .events import SagaEventPublisher
+from .events import InventoryOutboxPublisher, SagaEventPublisher
 from .models import ReservationLine
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,7 @@ class InventoryConsumer:
         self._settings = settings
         self._stock = stock
         self._publisher = publisher or SagaEventPublisher(settings)
+        self._outbox = InventoryOutboxPublisher(stock, self._publisher)
         self._client = None
 
     @property
@@ -42,7 +45,7 @@ class InventoryConsumer:
             if item.get("productId")
         ]
 
-    def handle(self, raw_body: str) -> bool:
+    def handle(self, raw_body: str, event_id: str | None = None) -> bool:
         """Process one command. Returns True if the message should be deleted.
 
         Returning False leaves the message for redelivery and, after
@@ -50,35 +53,46 @@ class InventoryConsumer:
         belongs.
         """
         try:
-            event = json.loads(raw_body)
-        except json.JSONDecodeError:
-            logger.warning("discarding unparseable command")
-            return True  # a poison message will never parse; do not loop on it
+            event = EventEnvelope.model_validate_json(raw_body)
+        except (json.JSONDecodeError, ValidationError):
+            logger.warning("invalid command contract; leaving for DLQ")
+            return False
 
-        if event.get("eventType") != "order-created":
-            logger.debug("ignoring event", extra={"eventType": event.get("eventType")})
+        if event.eventType == "order-cancel-requested":
+            try:
+                result = self._stock.release_reservation(event.aggregateId, event.correlationId)
+            except pybreaker.CircuitBreakerError:
+                return False
+            except Exception:
+                logger.exception("cancellation release failed", extra={"orderId": event.aggregateId})
+                return False
+            self._outbox.publish_once()
+            logger.info("cancellation release handled", extra={"orderId": event.aggregateId, "duplicate": result.duplicate})
             return True
 
-        order_id = event.get("orderId")
-        if not order_id:
-            logger.warning("command has no orderId")
+        if event.eventType != "order-created":
+            logger.debug("ignoring event", extra={"eventType": event.eventType})
             return True
 
-        user_id = event.get("userId")
+        payload = event.payload
+        order_id = event.aggregateId
+        set_correlation_id(event.correlationId)
+
+        user_id = payload.get("userId")
         # Carried through unchanged so the notification Lambda has a recipient.
         passthrough = {
-            "userEmail": event.get("userEmail"),
-            "correlationId": event.get("correlationId"),
+            "userEmail": payload.get("userEmail"),
+            "correlationId": event.correlationId,
+            "traceId": event.traceId,
+            "loadTest": bool(payload.get("loadTest", False)),
         }
-        lines = self._lines(event)
-        if not lines:
-            self._publisher.order_rejected(
-                order_id, "order contained no items", user_id, **passthrough
-            )
-            return True
+        lines = self._lines(payload)
+        event_id = event_id or event.eventId
 
         try:
-            result = self._stock.reserve(lines)
+            result = self._stock.process_order(
+                event_id, order_id, user_id, lines, passthrough
+            )
         except pybreaker.CircuitBreakerError:
             # The database is known-bad. Do not reject the order - that would
             # be a business decision made on an infrastructure fault. Leave the
@@ -89,14 +103,13 @@ class InventoryConsumer:
             logger.exception("reservation failed", extra={"orderId": order_id})
             return False
 
-        if result.ok:
-            self._publisher.order_confirmed(order_id, user_id, **passthrough)
-        else:
-            # Compensating event: stock was never taken, so nothing to undo
-            # here - the Order Service marks the order REJECTED.
-            self._publisher.order_rejected(
-                order_id, result.reason or "rejected", user_id, **passthrough
-            )
+        if result.duplicate:
+            logger.info("duplicate order command acknowledged", extra={"eventId": event_id})
+
+        # Low-latency best effort. A failure is intentionally not returned to
+        # SQS because Aurora already contains the durable outcome; the outbox
+        # thread retries it independently.
+        self._outbox.publish_once()
 
         return True
 
@@ -114,7 +127,12 @@ class InventoryConsumer:
 
         handled = 0
         for message in messages:
-            if self.handle(message["Body"]):
+            event_id = (
+                message.get("MessageAttributes", {})
+                .get("eventId", {})
+                .get("StringValue")
+            )
+            if self.handle(message["Body"], event_id=event_id):
                 self.client.delete_message(
                     QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"]
                 )

@@ -86,7 +86,7 @@ output "spa_bucket_name" {
 }
 
 output "cloudfront_domain" {
-  description = "CloudFront distribution domain (public entry point for the SPA and /api/*)"
+  description = "CloudFront distribution domain (public entry point for the SPA and /v1/*)"
   value       = aws_cloudfront_distribution.main.domain_name
 }
 

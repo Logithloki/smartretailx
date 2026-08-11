@@ -7,13 +7,13 @@ import threading
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
-from srx_common import Authenticator, configure_logging
+from srx_common import Authenticator, configure_logging, instrument_fastapi
 
 from .config import Settings, get_settings
 from .consumer import InventoryConsumer
-from .database import build_engine, build_session_factory, create_schema
-from .events import SagaEventPublisher
-from .models import HealthResponse, StockAdjustment, StockLevel, StockListResponse
+from .database import build_engine, build_session_factory
+from .events import InventoryOutboxPublisher, SagaEventPublisher
+from .models import Availability, AvailabilityResponse, HealthResponse, StockAdjustment, StockLevel, StockListResponse
 from .resilience import ResilientStock
 from .services import StockRepository
 
@@ -28,9 +28,8 @@ def create_app(
     settings = settings or get_settings()
     configure_logging(settings.service_name, settings.log_level)
 
-    # create_engine does not connect; only create_schema does, and that is
-    # done at startup rather than import so building the app never requires a
-    # reachable database (imports must stay side-effect free).
+    # create_engine does not connect. Schema changes are owned by Alembic and
+    # run as an explicit deployment step, never by application startup.
     engine = None
     if stock is None:
         engine = build_engine(settings)
@@ -40,20 +39,26 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        if engine is not None:
-            create_schema(engine)
-
         stop = threading.Event()
-        thread: threading.Thread | None = None
+        threads: list[threading.Thread] = []
         if settings.consumer_enabled and settings.orders_queue_url:
-            consumer = InventoryConsumer(settings, stock, publisher=publisher)
-            thread = threading.Thread(
+            saga_publisher = publisher or SagaEventPublisher(settings)
+            consumer = InventoryConsumer(settings, stock, publisher=saga_publisher)
+            consumer_thread = threading.Thread(
                 target=consumer.run_forever, args=(stop,), name="inventory-consumer", daemon=True
             )
-            thread.start()
+            outbox_thread = threading.Thread(
+                target=InventoryOutboxPublisher(stock, saga_publisher).run_forever,
+                args=(stop,),
+                name="inventory-outbox",
+                daemon=True,
+            )
+            threads.extend([consumer_thread, outbox_thread])
+            for thread in threads:
+                thread.start()
         yield
         stop.set()
-        if thread is not None:
+        for thread in threads:
             thread.join(timeout=5)
 
     app = FastAPI(
@@ -62,10 +67,29 @@ def create_app(
         description="Stock levels and the reservation half of the order saga.",
         lifespan=lifespan,
     )
+    instrument_fastapi(app, settings.service_name)
 
     @app.get("/health", response_model=HealthResponse, tags=["health"])
     def health() -> HealthResponse:
         return HealthResponse(service=settings.service_name, env=settings.env)
+
+    @app.get(
+        "/v1/availability",
+        response_model=AvailabilityResponse,
+        tags=["availability"],
+    )
+    def availability(
+        productIds: list[str] = Query(..., min_length=1, max_length=20),
+        _=Depends(auth.current_user),
+    ) -> AvailabilityResponse:
+        """Customer checkout hint only; final stock truth is reserve()."""
+        unique_ids = list(dict.fromkeys(productIds))
+        levels = []
+        for product_id in unique_ids:
+            level = stock.get(product_id)
+            quantity = level.quantity if level else 0
+            levels.append(Availability(productId=product_id, quantity=quantity, available=quantity > 0))
+        return AvailabilityResponse(availability=levels, count=len(levels))
 
     # Backlog item 30: stock read/adjust, admin only. Customers never see
     # stock levels - they are commercially sensitive and not needed to shop.

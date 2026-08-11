@@ -70,6 +70,28 @@ resource "aws_iam_role_policy" "pipes" {
         Resource = [aws_dynamodb_table.orders.stream_arn]
       },
       {
+        Sid    = "ReadPromotionsStream"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeStream",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:ListStreams",
+        ]
+        Resource = [aws_dynamodb_table.promotions.stream_arn]
+      },
+      {
+        Sid    = "ReadProductsStream"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeStream",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:ListStreams",
+        ]
+        Resource = [aws_dynamodb_table.products.stream_arn]
+      },
+      {
         Sid      = "PutOnOrdersBus"
         Effect   = "Allow"
         Action   = ["events:PutEvents"]
@@ -106,7 +128,7 @@ resource "aws_cloudwatch_event_rule" "order_status_changed" {
 
   event_pattern = jsonencode({
     source        = ["smartretailx.orders"]
-    "detail-type" = ["order.status-changed"]
+    "detail-type" = ["order.status-changed", "fulfilment-status-changed"]
   })
 
   tags = {
@@ -119,7 +141,7 @@ resource "aws_cloudwatch_event_target" "push" {
   rule           = aws_cloudwatch_event_rule.order_status_changed[0].name
   event_bus_name = aws_cloudwatch_event_bus.orders.name
   target_id      = "push-lambda"
-  arn            = aws_lambda_function.ws_push.arn
+  arn            = aws_lambda_alias.ws_push.arn
 }
 
 resource "aws_lambda_permission" "push_from_events" {
@@ -127,8 +149,42 @@ resource "aws_lambda_permission" "push_from_events" {
   statement_id  = "AllowInvokeFromEventBridgeOrderStatusRule"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.ws_push.function_name
+  qualifier     = aws_lambda_alias.ws_push.name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.order_status_changed[0].arn
+}
+
+# These stream-driven notifications are deliberately not a pricing authority.
+# The client receives identifiers only and refetches; the Order Service always
+# evaluates enabled/startsAt/endsAt when creating its immutable price snapshot.
+resource "aws_cloudwatch_event_rule" "promotion_price_refresh" {
+  count          = var.live ? 1 : 0
+  name           = "${var.project_name}-promotion-price-refresh"
+  description    = "Route catalogue price refresh records to the WebSocket push Lambda"
+  event_bus_name = aws_cloudwatch_event_bus.orders.name
+
+  event_pattern = jsonencode({
+    source        = ["smartretailx.promotions", "smartretailx.products"]
+    "detail-type" = ["promotion.price-refresh", "product.price-refresh"]
+  })
+}
+
+resource "aws_cloudwatch_event_target" "promotion_push" {
+  count          = var.live ? 1 : 0
+  rule           = aws_cloudwatch_event_rule.promotion_price_refresh[0].name
+  event_bus_name = aws_cloudwatch_event_bus.orders.name
+  target_id      = "push-lambda-catalogue"
+  arn            = aws_lambda_alias.ws_push.arn
+}
+
+resource "aws_lambda_permission" "push_from_promotion_events" {
+  count         = var.live ? 1 : 0
+  statement_id  = "AllowInvokeFromEventBridgePromotionPriceRule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ws_push.function_name
+  qualifier     = aws_lambda_alias.ws_push.name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.promotion_price_refresh[0].arn
 }
 
 resource "aws_pipes_pipe" "order_status" {
@@ -155,7 +211,7 @@ resource "aws_pipes_pipe" "order_status" {
           dynamodb = {
             NewImage = {
               status = {
-                S = ["CONFIRMED", "REJECTED"]
+                S = ["CONFIRMED", "REJECTED", "CANCEL_PENDING", "CANCELLED"]
               }
             }
           }
@@ -177,4 +233,83 @@ resource "aws_pipes_pipe" "order_status" {
   tags = {
     Name = "${var.project_name}-order-status"
   }
+}
+
+resource "aws_pipes_pipe" "promotion_price_refresh" {
+  count    = var.live ? 1 : 0
+  name     = "${var.project_name}-promotion-price-refresh"
+  role_arn = aws_iam_role.pipes.arn
+  source   = aws_dynamodb_table.promotions.stream_arn
+  target   = aws_cloudwatch_event_bus.orders.arn
+
+  source_parameters {
+    dynamodb_stream_parameters {
+      starting_position = "LATEST"
+      batch_size        = 1
+    }
+
+    filter_criteria {
+      filter {
+        # The reconciler writes this marker only with a successful conditional
+        # transition, then clears it in a follow-up record. Pipe's at-least-
+        # once delivery remains safe because the browser merely refetches.
+        pattern = jsonencode({
+          eventName = ["INSERT", "MODIFY"]
+          dynamodb = {
+            NewImage = {
+              priceEventPending = { S = ["true"] }
+            }
+          }
+        })
+      }
+    }
+  }
+
+  target_parameters {
+    eventbridge_event_bus_parameters {
+      detail_type = "promotion.price-refresh"
+      source      = "smartretailx.promotions"
+    }
+  }
+
+  tags = { Name = "${var.project_name}-promotion-price-refresh" }
+}
+
+resource "aws_pipes_pipe" "product_price_refresh" {
+  count    = var.live ? 1 : 0
+  name     = "${var.project_name}-product-price-refresh"
+  role_arn = aws_iam_role.pipes.arn
+  source   = aws_dynamodb_table.products.stream_arn
+  target   = aws_cloudwatch_event_bus.orders.arn
+
+  source_parameters {
+    dynamodb_stream_parameters {
+      starting_position = "LATEST"
+      batch_size        = 1
+    }
+
+    filter_criteria {
+      filter {
+        # The write record containing the marker triggers a safe identifier-
+        # only browser refetch. The follow-up clear record is filtered out.
+        pattern = jsonencode({
+          eventName = ["MODIFY"]
+          dynamodb = {
+            NewImage = {
+              priceEventPending = { S = ["true"] }
+            }
+          }
+        })
+      }
+    }
+  }
+
+  target_parameters {
+    eventbridge_event_bus_parameters {
+      detail_type = "product.price-refresh"
+      source      = "smartretailx.products"
+    }
+  }
+
+  tags = { Name = "${var.project_name}-product-price-refresh" }
 }

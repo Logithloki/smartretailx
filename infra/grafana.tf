@@ -27,6 +27,10 @@
 # demo scale; a production path would add EFS (Fargate supports it) or
 # a Postgres backend on Aurora.
 
+locals {
+  grafana_runtime_enabled = var.live && var.enable_grafana
+}
+
 resource "random_password" "grafana_admin" {
   length  = 24
   special = false # Grafana admin password is passed via env - special
@@ -69,9 +73,11 @@ resource "aws_cognito_user_pool_client" "alb_grafana" {
     # The Terraform docs and the AWS console both spell this path with a
     # trailing /oauth2/idpresponse. Grafana itself lives at /grafana/*
     # but the OIDC dance uses this dedicated ALB path.
-    "https://${aws_lb.main[0].dns_name}/oauth2/idpresponse",
+    local.grafana_runtime_enabled ? "https://${aws_lb.main[0].dns_name}/oauth2/idpresponse" : "http://localhost/oauth2/idpresponse"
   ]
-  logout_urls = ["https://${aws_lb.main[0].dns_name}/"]
+  logout_urls = [
+    local.grafana_runtime_enabled ? "https://${aws_lb.main[0].dns_name}/" : "http://localhost/"
+  ]
 
   explicit_auth_flows = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
 
@@ -185,7 +191,7 @@ resource "aws_ecs_task_definition" "grafana" {
       environment = [
         {
           name  = "GF_SERVER_ROOT_URL"
-          value = "https://${aws_lb.main[0].dns_name}/grafana/"
+          value = local.grafana_runtime_enabled ? "https://${aws_lb.main[0].dns_name}/grafana/" : "http://localhost/grafana/"
         },
         { name = "GF_SERVER_SERVE_FROM_SUB_PATH", value = "true" },
         { name = "GF_AUTH_ANONYMOUS_ENABLED", value = "false" },
@@ -229,7 +235,7 @@ resource "aws_ecs_task_definition" "grafana" {
 }
 
 resource "aws_lb_target_group" "grafana" {
-  count       = var.live ? 1 : 0
+  count       = local.grafana_runtime_enabled ? 1 : 0
   name        = "${var.project_name}-grafana"
   port        = 3000
   protocol    = "HTTP"
@@ -254,26 +260,13 @@ resource "aws_lb_target_group" "grafana" {
 # per-service /v1/* rules (priorities 10 / 20 in compute.tf) match
 # first. Only reachable inside the VPC (ALB is internal).
 resource "aws_lb_listener_rule" "grafana" {
-  count        = var.live ? 1 : 0
+  count        = local.grafana_runtime_enabled ? 1 : 0
   listener_arn = aws_lb_listener.http[0].arn
   priority     = 100
 
-  # Cognito OIDC gate. Users hitting /grafana/* while unauthenticated
-  # bounce through Hosted UI, come back with an ALB session cookie,
-  # and the ALB injects the OIDC data as X-Amzn-Oidc-* headers before
-  # forwarding to Grafana.
-  action {
-    type = "authenticate-cognito"
-    authenticate_cognito {
-      user_pool_arn              = aws_cognito_user_pool.main.arn
-      user_pool_client_id        = aws_cognito_user_pool_client.alb_grafana.id
-      user_pool_domain           = aws_cognito_user_pool_domain.main.domain
-      scope                      = "openid email"
-      session_timeout            = 3600 # 1 h; matches Cognito access-token TTL
-      on_unauthenticated_request = "authenticate"
-    }
-  }
-
+  # ALB requires an HTTPS listener (port 443) for type = "authenticate-cognito".
+  # Since the internal ALB operates on HTTP (port 80), Grafana is routed
+  # directly to the target group and secured via Secrets Manager admin auth.
   action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.grafana[0].arn
@@ -287,7 +280,7 @@ resource "aws_lb_listener_rule" "grafana" {
 }
 
 resource "aws_ecs_service" "grafana" {
-  count           = var.live ? 1 : 0
+  count           = local.grafana_runtime_enabled ? 1 : 0
   name            = "${var.project_name}-grafana-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.grafana.arn
@@ -331,7 +324,7 @@ resource "aws_ecs_service" "grafana" {
 
 output "grafana_url" {
   description = "Grafana URL (only reachable via SSM port-forward; ALB is internal)"
-  value       = var.live ? "https://${aws_lb.main[0].dns_name}/grafana/" : null
+  value       = local.grafana_runtime_enabled ? "https://${aws_lb.main[0].dns_name}/grafana/" : null
 }
 
 output "grafana_admin_secret_arn" {

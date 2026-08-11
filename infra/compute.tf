@@ -11,7 +11,7 @@ resource "aws_ecr_repository" "services" {
 
   name                 = "${var.project_name}/${each.key}"
   image_tag_mutability = "IMMUTABLE"
-  force_delete         = true
+  force_delete         = var.environment_name != "production"
 
   image_scanning_configuration {
     scan_on_push = true
@@ -124,10 +124,10 @@ resource "aws_lb_listener" "http" {
 
 resource "aws_lb_listener_rule" "services" {
   for_each = var.live ? {
-    order     = { pattern = "/v1/orders*", priority = 10 }
-    inventory = { pattern = "/v1/inventory*", priority = 20 }
-    user      = { pattern = "/v1/users*", priority = 30 }
-    product   = { pattern = "/v1/products*", priority = 40 }
+    order     = { patterns = ["/v1/orders*"], priority = 10 }
+    inventory = { patterns = ["/v1/inventory*", "/v1/availability*"], priority = 20 }
+    user      = { patterns = ["/v1/users*"], priority = 30 }
+    product   = { patterns = ["/v1/products*", "/v1/promotions*"], priority = 40 }
   } : {}
 
   listener_arn = aws_lb_listener.http[0].arn
@@ -140,7 +140,7 @@ resource "aws_lb_listener_rule" "services" {
 
   condition {
     path_pattern {
-      values = [each.value.pattern]
+      values = each.value.patterns
     }
   }
 }
@@ -167,7 +167,7 @@ resource "aws_apigatewayv2_api" "main" {
   description   = "SmartRetailX public edge - JWT authorised, VPC Link to internal ALB"
 
   # SPA -> CloudFront -> HTTP API is same-origin from the browser's view
-  # (CloudFront proxies /api/*), so no CORS preflight fires on that path.
+  # (CloudFront proxies /v1/*), so no CORS preflight fires on that path.
   # This list only covers direct-to-API access from `var.cors_allow_origins`
   # (localhost:5173 during Vite dev, plus anything the operator passes in
   # via -var). Referencing aws_cloudfront_distribution here would create a
@@ -223,7 +223,7 @@ resource "aws_apigatewayv2_integration" "alb" {
 locals {
   # Two route keys per service: the collection and everything beneath it.
   api_route_keys = var.live ? flatten([
-    for svc in ["orders", "inventory", "users", "products"] : [
+    for svc in ["orders", "inventory", "availability", "users", "products", "promotions"] : [
       "ANY /v1/${svc}",
       "ANY /v1/${svc}/{proxy+}"
     ]
@@ -256,9 +256,12 @@ locals {
     order = {
       task_role_arn = aws_iam_role.order_task.arn
       environment = {
-        ORDERS_TABLE_NAME      = aws_dynamodb_table.orders.name
-        IDEMPOTENCY_TABLE_NAME = aws_dynamodb_table.idempotency.name
-        ORDERS_QUEUE_URL       = aws_sqs_queue.orders.url
+        ORDERS_TABLE_NAME       = aws_dynamodb_table.orders.name
+        ORDER_OUTBOX_TABLE_NAME = aws_dynamodb_table.order_outbox.name
+        IDEMPOTENCY_TABLE_NAME  = aws_dynamodb_table.idempotency.name
+        PRODUCTS_TABLE_NAME     = aws_dynamodb_table.products.name
+        PROMOTIONS_TABLE_NAME   = aws_dynamodb_table.promotions.name
+        EVENT_BUS_NAME          = aws_cloudwatch_event_bus.orders.name
         # Saga outcome receiver. Without these two the order is placed and the
         # command published, but nothing ever moves it out of PENDING - the
         # consumer thread simply never starts.
@@ -298,8 +301,9 @@ locals {
     product = {
       task_role_arn = aws_iam_role.product_task.arn
       environment = {
-        PRODUCTS_TABLE_NAME = aws_dynamodb_table.products.name
-        CACHE_TTL_SECONDS   = "30"
+        PRODUCTS_TABLE_NAME   = aws_dynamodb_table.products.name
+        PROMOTIONS_TABLE_NAME = aws_dynamodb_table.promotions.name
+        CACHE_TTL_SECONDS     = "30"
       }
       secrets = {}
     }
@@ -331,8 +335,12 @@ resource "aws_ecs_task_definition" "services" {
 
   container_definitions = jsonencode([
     {
-      name      = "${each.key}-service"
-      image     = "${aws_ecr_repository.services["${each.key}-service"].repository_url}:${var.image_tag}"
+      name = "${each.key}-service"
+      image = lookup(var.service_image_digests, each.key, "") != "" ? (
+        "${aws_ecr_repository.services["${each.key}-service"].repository_url}@${var.service_image_digests[each.key]}"
+        ) : (
+        "${aws_ecr_repository.services["${each.key}-service"].repository_url}:${var.image_tag}"
+      )
       essential = true
 
       portMappings = [{
@@ -364,12 +372,10 @@ resource "aws_ecs_task_definition" "services" {
         for k, v in each.value.secrets : { name = k, valueFrom = v }
       ]
 
-      # dependsOn ensures the app doesn't try to emit spans before the
-      # sidecar is listening on 4317. HEALTHY (not just STARTED) so the
-      # collector is actually ready to receive.
+      # dependsOn ensures the app container waits for the sidecar to start
       dependsOn = [{
         containerName = "adot-collector"
-        condition     = "HEALTHY"
+        condition     = "START"
       }]
 
       logConfiguration = {
@@ -396,16 +402,6 @@ resource "aws_ecs_task_definition" "services" {
       # requests during a demo.
 
       command = ["--config=/etc/ecs/ecs-default-config.yaml"]
-
-      # Health check: the collector exposes an HTTP health-check
-      # extension on 13133 when the default config is used.
-      healthCheck = {
-        command     = ["CMD-SHELL", "wget -q -O - http://localhost:13133/ || exit 1"]
-        interval    = 15
-        timeout     = 5
-        retries     = 3
-        startPeriod = 20
-      }
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -462,6 +458,12 @@ resource "aws_ecs_service" "services" {
   deployment_circuit_breaker {
     enable   = true
     rollback = true
+  }
+
+  alarms {
+    alarm_names = [aws_cloudwatch_metric_alarm.service_unhealthy_targets[each.key].alarm_name]
+    enable      = true
+    rollback    = true
   }
 
   depends_on = [aws_route.private_egress]

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, create_engine
+from sqlalchemy import JSON, CheckConstraint, DateTime, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -34,6 +34,49 @@ class StockItem(Base):
     # Defence in depth: even if the application logic is wrong, the database
     # refuses to hold negative stock.
     __table_args__ = (CheckConstraint("quantity >= 0", name="stock_quantity_non_negative"),)
+
+
+class ProcessedEvent(Base):
+    __tablename__ = "processed_events"
+
+    event_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
+class ReservationLedger(Base):
+    """Immutable reservation evidence: RESERVED transitions to RELEASED once."""
+
+    __tablename__ = "reservation_ledger"
+
+    order_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    product_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(12), nullable=False, default="RESERVED")
+    reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (CheckConstraint("quantity > 0", name="reservation_quantity_positive"),)
+
+
+class InventoryOutboxEvent(Base):
+    __tablename__ = "inventory_outbox"
+
+    event_id: Mapped[str] = mapped_column(String(240), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    aggregate_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    message_id: Mapped[str | None] = mapped_column(String(100))
+
+    @property
+    def eventId(self) -> str:
+        return self.event_id
 
 
 def build_engine(settings, **kwargs):
