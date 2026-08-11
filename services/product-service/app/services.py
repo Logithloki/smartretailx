@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -19,6 +20,7 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+_LOCAL_RECONCILE_LOCK = threading.Lock()
 
 
 class ProductNotFound(Exception):
@@ -353,6 +355,12 @@ class ProductRepository:
         Pricing does not consult this projection. It exists solely to generate
         a single stream record for catalogue refresh notifications.
         """
+        # DynamoDB's state-and-version condition is the cross-task authority.
+        # This lock also makes the in-process/moto concurrency test deterministic.
+        with _LOCAL_RECONCILE_LOCK:
+            return self._reconcile_promotions(now)
+
+    def _reconcile_promotions(self, now: datetime | None = None) -> ReconcileResult:
         now = now or datetime.now(UTC)
         response = self.promotions_table.query(
             IndexName="enabled-startsAt-index",

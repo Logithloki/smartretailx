@@ -101,15 +101,28 @@ jobs:
               exit 1
             fi
           done
-          # Wait for the LocalStack init hook to finish creating the tables and
-          # queues before exercising the services. Container health alone can
-          # become ready while the ready.d hook is still completing.
+          # Wait for the complete LocalStack ready.d contract. Container health
+          # alone becomes ready before its table/queue seed script finishes.
           for attempt in $(seq 1 30); do
             if docker compose exec -T localstack awslocal dynamodb describe-table \
+              --table-name smartretailx-orders --region eu-west-1 >/dev/null 2>&1 && \
+              docker compose exec -T localstack awslocal dynamodb describe-table \
               --table-name smartretailx-products --region eu-west-1 >/dev/null 2>&1 && \
               docker compose exec -T localstack awslocal dynamodb describe-table \
               --table-name smartretailx-promotions --region eu-west-1 >/dev/null 2>&1; then
-              break
+              if docker compose exec -T localstack awslocal dynamodb describe-table \
+                --table-name smartretailx-idempotency --region eu-west-1 >/dev/null 2>&1 && \
+                docker compose exec -T localstack awslocal dynamodb describe-table \
+                --table-name smartretailx-order-outbox --region eu-west-1 >/dev/null 2>&1 && \
+                docker compose exec -T localstack awslocal sqs get-queue-url \
+                --queue-name smartretailx-orders-queue --region eu-west-1 >/dev/null 2>&1 && \
+                docker compose exec -T localstack awslocal sqs get-queue-url \
+                --queue-name smartretailx-order-events --region eu-west-1 >/dev/null 2>&1 && \
+                docker compose exec -T localstack awslocal dynamodb get-item \
+                --table-name smartretailx-products --key '{"productId":{"S":"prod-laptop-001"}}' \
+                --region eu-west-1 --query 'Item.productId.S' --output text 2>/dev/null | grep -qx 'prod-laptop-001'; then
+                break
+              fi
             fi
             if [[ "$attempt" == "30" ]]; then
               echo "LocalStack init resources were not ready"
@@ -130,6 +143,7 @@ jobs:
           if ! first=$(curl --fail-with-body --silent --show-error -X POST http://localhost:8001/v1/orders \
             -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
             -H 'Idempotency-Key: ci-saga-1' -d "$body"); then
+            echo "$first"
             docker compose logs --no-color --tail=300 order-service localstack
             exit 1
           fi
