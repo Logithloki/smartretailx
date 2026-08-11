@@ -71,7 +71,22 @@ jobs:
           for port in 8001 8002 8003 8004; do
             ready=false
             for attempt in $(seq 1 60); do
-              if curl --fail --silent "http://localhost:${port}/health" >/dev/null; then ready=true; break; fi
+              body_file="/tmp/smartretailx-health-${port}.body"
+              status=$(curl --silent --show-error --output "$body_file" \
+                --write-out '%{http_code}' "http://localhost:${port}/health" || true)
+              if [[ "$status" == "200" ]]; then ready=true; break; fi
+              if [[ "$status" == "500" ]]; then
+                echo "health endpoint returned HTTP 500 on port ${port} (attempt ${attempt})"
+                cat "$body_file" || true
+                docker compose ps
+                case "$port" in
+                  8001) docker compose logs --no-color --tail=200 order-service ;;
+                  8002) docker compose logs --no-color --tail=200 inventory-service inventory-migrate postgres ;;
+                  8003) docker compose logs --no-color --tail=200 user-service ;;
+                  8004) docker compose logs --no-color --tail=200 product-service ;;
+                esac
+                exit 1
+              fi
               sleep 2
             done
             if ! $ready; then
