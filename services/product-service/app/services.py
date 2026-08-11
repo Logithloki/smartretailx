@@ -381,10 +381,13 @@ class ProductRepository:
                 self.promotions_table.update_item(
                     Key={"promotionId": item["promotionId"]},
                     UpdateExpression="SET lifecycleState = :target, lifecycleVersion = :version, priceEventPending = :pending",
-                    ConditionExpression="lifecycleState = :current AND enabled = :enabled",
+                    ConditionExpression=(
+                        "lifecycleState = :current AND enabled = :enabled "
+                        "AND lifecycleVersion = :current_version"
+                    ),
                     ExpressionAttributeValues={
                         ":target": target.value, ":version": next_version, ":pending": "true",
-                        ":current": state, ":enabled": "true",
+                        ":current": state, ":enabled": "true", ":current_version": int(item.get("lifecycleVersion", 0)),
                     },
                 )
             except ClientError as exc:
