@@ -17,6 +17,10 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    env:
+      # Supports Lambda services whose deployment module lives at service root
+      # (for example order-outbox-publisher/handler.py).
+      PYTHONPATH: ${{ github.workspace }}/services/${{ inputs.service }}:${{ github.workspace }}/services/common
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

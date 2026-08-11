@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Local integration-test JWT fixture"
+paths = [".github/workflows/reusable-integration-tests.yml"]
+regexTarget = "line"
+regexes = ["eyJhbGciOiJIUzI1NiIs"]
+
+[[allowlists]]
+description = "Non-secret API Gateway request identifier in evidence documentation"
+paths = ["docs/final-live-verification.md"]
+regexTarget = "line"
+regexes = ["API Gateway request ID"]

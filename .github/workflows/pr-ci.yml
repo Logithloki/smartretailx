@@ -63,7 +63,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pytest pytest-cov pydantic==2.10.4 fastapi==0.115.6
+      - run: pip install -r services/common/requirements.txt pytest pytest-cov
       # Plan-backed contracts require an authenticated remote backend and are
       # exercised in the protected infrastructure validation workflow. PR CI
       # runs the source-only architecture contracts without AWS credentials.
