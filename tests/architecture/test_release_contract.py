@@ -14,13 +14,13 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         self.assertNotIn("@master", text)
 
     def test_build_repository_identity_matches_terraform(self):
-        build = (WORKFLOWS / "reusable" / "container-build.yml").read_text(encoding="utf-8")
+        build = (WORKFLOWS / "reusable-container-build.yml").read_text(encoding="utf-8")
         terraform = (ROOT / "infra" / "compute.tf").read_text(encoding="utf-8")
         self.assertIn('${{ inputs.project_name }}/${{ inputs.service }}-service', build)
         self.assertIn('name                 = "${var.project_name}/${each.key}"', terraform)
 
     def test_deployment_registers_digest_task_revision_and_waits(self):
-        deploy = (WORKFLOWS / "reusable" / "deploy-ecs.yml").read_text(encoding="utf-8")
+        deploy = (WORKFLOWS / "reusable-deploy-ecs.yml").read_text(encoding="utf-8")
         self.assertIn("@${{ inputs.image_digest }}", deploy)
         self.assertIn("register-task-definition", deploy)
         self.assertIn("ecs wait services-stable", deploy)
