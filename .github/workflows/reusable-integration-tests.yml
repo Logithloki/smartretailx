@@ -74,7 +74,17 @@ jobs:
               if curl --fail --silent "http://localhost:${port}/health" >/dev/null; then ready=true; break; fi
               sleep 2
             done
-            $ready || { echo "service on ${port} did not become ready"; exit 1; }
+            if ! $ready; then
+              echo "service on ${port} did not become ready"
+              docker compose ps
+              case "$port" in
+                8001) docker compose logs --no-color order-service ;;
+                8002) docker compose logs --no-color inventory-service inventory-migrate postgres ;;
+                8003) docker compose logs --no-color user-service ;;
+                8004) docker compose logs --no-color product-service ;;
+              esac
+              exit 1
+            fi
           done
           token='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjaS1hZG1pbiIsImVtYWlsIjoiY2lAZXhhbXBsZS5jb20iLCJjb2duaXRvOmdyb3VwcyI6WyJhZG1pbiIsImN1c3RvbWVyIl19.sig'
           curl --fail --silent --show-error -X PATCH http://localhost:8002/v1/inventory/prod-laptop-001 \
