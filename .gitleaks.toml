@@ -3,7 +3,10 @@ useDefault = true
 
 [[allowlists]]
 description = "Local integration-test JWT fixture"
-paths = [".github/workflows/reusable-integration-tests.yml"]
+paths = [
+  ".github/workflows/reusable-integration-tests.yml",
+  ".github/workflows/reusable/integration-tests.yml",
+]
 regexTarget = "line"
 regexes = ["eyJhbGciOiJIUzI1NiIs"]
 
