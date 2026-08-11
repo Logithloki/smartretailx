@@ -4,3 +4,8 @@ useDefault = true
 [[allowlists]]
 description = "Historical commit contains only documented local fixtures"
 commits = ["ff61e166e4e15f046ae381246328398fd9db4850"]
+regexTarget = "line"
+regexes = [
+  "token='eyJhbGciOiJIUzI1NiIs[^']+'",
+  "API Gateway request ID: `[^`]+`",
+]
