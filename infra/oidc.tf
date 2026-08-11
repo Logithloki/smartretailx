@@ -14,16 +14,15 @@
 
 # ─── The IdP registration ─────────────────────────────────────
 #
-# thumbprint_list is deliberately EMPTY. As of July 2023 AWS validates
-# GitHub's OIDC token by trusting the certificate authority directly, so
-# the once-mandatory thumbprint has become a no-op. Passing a stale one
-# is worse than leaving it out - if GitHub rotates the cert (they did in
-# 2023) a hard-coded thumbprint stops accepting tokens. Terraform still
-# requires the argument, so we pass an empty list.
+# AWS validates GitHub through its trusted root CA library, so configured
+# thumbprints are retained but not used for GitHub certificate verification.
+# This provider was originally created with the legacy thumbprint below; AWS
+# retains that value when the argument is removed, so declaring the retained
+# value prevents perpetual drift without recreating the OIDC provider.
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = []
+  thumbprint_list = ["ab9d0263244dd0326eb67015705a667e79cfe998"]
 
   tags = {
     Name = "${var.project_name}-github-oidc"
@@ -40,21 +39,15 @@ resource "aws_iam_openid_connect_provider" "github" {
 #      - This is what `configure-aws-credentials` uses as the audience,
 #        and dropping it would let a token intended for any other AWS
 #        account or third-party service be replayed against us.
-#   2. token.actions.githubusercontent.com:sub MUST match repo:<owner>/<repo>:*
-#      - GitHub's `sub` claim is the ONLY reliable way to scope trust
-#        to a specific repository. StringLike with `:*` matches every
-#        branch / tag / environment in the repo but does NOT match a
-#        fork or a differently named repo (`sub` is not user-controllable).
-#      - The pattern is `repo:<owner>/<repo>:*` - a bare `<owner>/<repo>`
-#        will not match because GitHub's `sub` always has a trailing
-#        context (`:ref:refs/heads/main`, `:environment:prod`, etc).
-#      - A tighter production pattern would pin `:ref:refs/heads/main`
-#        so only default-branch pushes can deploy; kept as `:*` for
-#        Week 5 to let PR builds validate the pipeline end-to-end.
-#
-# Common bug: using `StringEquals` for the sub condition. The literal
-# `sub` value is never `repo:<owner>/<repo>:*` - the `:*` is a wildcard,
-# so the condition operator MUST be StringLike.
+#   2. token.actions.githubusercontent.com:sub MUST equal the repository's
+#      exact GitHub Environment subject. GitHub changes the subject to
+#      `repo:owner/repo:environment:name` when a job declares an environment.
+#      This lets GitHub Environment reviewers and branch restrictions remain
+#      the authoritative deployment gate, including for production.
+locals {
+  github_deploy_environment = var.environment_name == "baseline" ? "development" : var.environment_name
+}
+
 resource "aws_iam_role" "gha_deploy" {
   name = "${var.project_name}-gha-deploy"
 
@@ -67,9 +60,7 @@ resource "aws_iam_role" "gha_deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        }
-        StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:*"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:environment:${local.github_deploy_environment}"
         }
       }
     }]
@@ -82,6 +73,116 @@ resource "aws_iam_role" "gha_deploy" {
   tags = {
     Name = "${var.project_name}-gha-deploy"
   }
+}
+
+# Build-once role: main may push immutable artifacts, but cannot deploy them.
+resource "aws_iam_role" "gha_release" {
+  name = "${var.project_name}-gha-release"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/main"
+        }
+      }
+    }]
+  })
+
+  max_session_duration = 3600
+
+  tags = {
+    Name = "${var.project_name}-gha-release"
+  }
+}
+
+resource "aws_iam_role_policy" "gha_release" {
+  name = "gha-release"
+  role = aws_iam_role.gha_release.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "EcrAuth"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Sid    = "ImmutableEcrRelease"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:CompleteLayerUpload",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart",
+          "ecr:DescribeRepositories",
+          "ecr:DescribeImages",
+        ]
+        Resource = [for repository in aws_ecr_repository.services : repository.arn]
+      },
+    ]
+  })
+}
+
+# Read-only planning is deliberately separate from deployment. The only
+# writes allowed are the S3 lockfile operations Terraform needs while reading
+# remote state; this role cannot apply infrastructure changes.
+resource "aws_iam_role" "gha_terraform_plan" {
+  name = "${var.project_name}-gha-terraform-plan"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/main"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "gha_terraform_plan_readonly" {
+  role       = aws_iam_role.gha_terraform_plan.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+resource "aws_iam_role_policy" "gha_terraform_plan_state_lock" {
+  name = "terraform-state-read-and-lock"
+  role = aws_iam_role.gha_terraform_plan.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketVersioning"]
+        Resource = "arn:aws:s3:::smartretailx-tfstate-322551984077"
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = [
+          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate",
+          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate.tflock",
+          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate",
+          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate.tflock",
+        ]
+      },
+    ]
+  })
 }
 
 # ─── Deploy permissions ───────────────────────────────────────
@@ -133,6 +234,7 @@ resource "aws_iam_role_policy" "gha_deploy" {
           "ecs:DescribeServices",
           "ecs:DescribeTaskDefinition",
           "ecs:RegisterTaskDefinition",
+          "ecs:RunTask",
           "ecs:ListTasks",
           "ecs:DescribeTasks",
         ]
@@ -193,6 +295,24 @@ resource "aws_iam_role_policy" "gha_deploy" {
         Action   = ["cloudfront:CreateInvalidation"]
         Resource = [aws_cloudfront_distribution.main.arn]
       },
+      {
+        Sid    = "LambdaVersionPromotion"
+        Effect = "Allow"
+        Action = [
+          "lambda:GetAlias",
+          "lambda:CreateAlias",
+          "lambda:UpdateAlias",
+          "lambda:GetFunctionConfiguration",
+          "lambda:UpdateFunctionCode",
+          "lambda:PublishVersion",
+        ]
+        Resource = flatten([
+          for function_name in values(local.operational_lambdas) : [
+            "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${function_name}",
+            "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${function_name}:*",
+          ]
+        ])
+      },
     ]
   })
 }
@@ -200,4 +320,14 @@ resource "aws_iam_role_policy" "gha_deploy" {
 output "github_oidc_role_arn" {
   description = "Role ARN for GitHub Actions to assume via OIDC (paste into workflow's role-to-assume)"
   value       = aws_iam_role.gha_deploy.arn
+}
+
+output "github_release_role_arn" {
+  description = "Main-branch build-only role ARN for immutable ECR releases"
+  value       = aws_iam_role.gha_release.arn
+}
+
+output "github_terraform_plan_role_arn" {
+  description = "Main-branch read-only Terraform planning role ARN"
+  value       = aws_iam_role.gha_terraform_plan.arn
 }

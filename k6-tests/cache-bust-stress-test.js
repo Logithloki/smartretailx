@@ -1,6 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { BASE_URL, getHeaders } from './config.js';
+import { BASE_URL, getHeaders, validateConfig } from './config.js';
 
 /**
  * Cache-Busting Stress Test
@@ -10,6 +10,7 @@ import { BASE_URL, getHeaders } from './config.js';
  * This causes real CPU utilization spikes on the backend.
  */
 export const options = {
+  summaryTrendStats: ['min', 'med', 'avg', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],
   stages: [
     { duration: '1m', target: 50 },   // Warm up
     { duration: '2m', target: 150 },   // Ramp to heavy
@@ -26,6 +27,10 @@ export const options = {
   },
 };
 
+export function setup() {
+  return validateConfig();
+}
+
 let counter = 0;
 
 export default function () {
@@ -34,7 +39,7 @@ export default function () {
   const cacheBuster = `${Date.now()}-${__VU}-${__ITER}-${counter}`;
 
   const res = http.get(
-    `${BASE_URL}/api/v1/products?_cb=${cacheBuster}`,
+    `${BASE_URL}/v1/products?_cb=${cacheBuster}`,
     { headers: getHeaders() }
   );
 

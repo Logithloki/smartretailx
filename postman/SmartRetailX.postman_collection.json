@@ -1,0 +1,218 @@
+{
+  "info": {
+    "name": "SmartRetailX API contracts",
+    "description": "Canonical /v1 contract, Cognito authorization, RBAC, idempotency, and order saga smoke. Tokens are injected at runtime and never stored in the collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('idempotencyKey')) {",
+          "  pm.environment.set('idempotencyKey', `newman-${Date.now()}-${Math.random()}`);",
+          "}",
+          "const base = pm.environment.get('apiBaseUrl') || '';",
+          "if (!/^https:\\/\\//.test(base)) { throw new Error('apiBaseUrl must be HTTPS'); }"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication and catalogue",
+      "item": [
+        {
+          "name": "Unauthenticated catalogue is rejected",
+          "request": { "method": "GET", "url": "{{apiBaseUrl}}/v1/products" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('JWT required', () => pm.expect(pm.response.code).to.be.oneOf([401, 403]));"] } }]
+        },
+        {
+          "name": "Customer lists products",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}", "type": "text" }],
+            "url": "{{apiBaseUrl}}/v1/products"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('catalogue returned', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('versioned response schema', () => { pm.expect(body.products).to.be.an('array'); pm.expect(body.count).to.be.a('number'); });",
+            "if (body.products.length) pm.environment.set('productId', body.products[0].productId);"
+          ] } }]
+        },
+        {
+          "name": "Customer cannot create products",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"productId\":\"forbidden-product\",\"productName\":\"Forbidden\",\"price\":\"1.00\",\"category\":\"test\"}" },
+            "url": "{{apiBaseUrl}}/v1/products"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('admin RBAC enforced', () => pm.response.to.have.status(403));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Users and admin product CRUD",
+      "item": [
+        {
+          "name": "Customer reads own user profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{apiBaseUrl}}/v1/users/me"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('own profile returned', () => pm.response.to.have.status(200));",
+            "pm.test('profile has authoritative groups', () => pm.expect(pm.response.json().groups).to.be.an('array'));"
+          ] } }]
+        },
+        {
+          "name": "Customer cannot list the user directory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{apiBaseUrl}}/v1/users"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('directory RBAC enforced', () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Admin lists the user directory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{apiBaseUrl}}/v1/users"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('admin directory access', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Admin creates a product",
+          "event": [
+            { "listen": "prerequest", "script": { "exec": ["pm.environment.set('testProductId', `newman-product-${Date.now()}`);"] } },
+            { "listen": "test", "script": { "exec": ["pm.test('product created', () => pm.response.to.have.status(201));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"productId\":\"{{testProductId}}\",\"productName\":\"Newman Product\",\"price\":\"2.50\",\"category\":\"Testing\"}" },
+            "url": "{{apiBaseUrl}}/v1/products"
+          }
+        },
+        {
+          "name": "Admin updates a product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"price\":\"3.00\"}" },
+            "url": "{{apiBaseUrl}}/v1/products/{{testProductId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('product updated', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Admin deletes a product",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{apiBaseUrl}}/v1/products/{{testProductId}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('product deleted', () => pm.response.to.have.status(204));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Order idempotency, validation and saga",
+      "item": [
+        {
+          "name": "Invalid order payload is rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"items\":[{\"productId\":\"{{productId}}\",\"quantity\":0}]}" },
+            "url": "{{apiBaseUrl}}/v1/orders"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Pydantic validation enforced', () => pm.response.to.have.status(422));"] } }]
+        },
+        {
+          "name": "Create order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"items\":[{\"productId\":\"{{productId}}\",\"quantity\":1}]}" },
+            "url": "{{apiBaseUrl}}/v1/orders"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('order accepted', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json(); pm.environment.set('orderId', body.orderId);",
+            "pm.test('initial state pending', () => pm.expect(body.status).to.eql('PENDING'));"
+          ] } }]
+        },
+        {
+          "name": "Replay same order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"items\":[{\"productId\":\"{{productId}}\",\"quantity\":1}]}" },
+            "url": "{{apiBaseUrl}}/v1/orders"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('replay returns existing order', () => pm.response.to.have.status(200));",
+            "pm.test('replay header present', () => pm.expect(pm.response.headers.get('Idempotent-Replay')).to.eql('true'));",
+            "pm.test('same aggregate', () => pm.expect(pm.response.json().orderId).to.eql(pm.environment.get('orderId')));"
+          ] } }]
+        },
+        {
+          "name": "Read own order outcome",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{apiBaseUrl}}/v1/orders/{{orderId}}"
+          },
+          "event": [{ "listen": "prerequest", "script": { "exec": ["setTimeout(() => {}, 3000);"] } }, { "listen": "test", "script": { "exec": [
+            "pm.test('owner can read order', () => pm.response.to.have.status(200));",
+            "pm.test('known saga state', () => pm.expect(pm.response.json().status).to.be.oneOf(['PENDING','CONFIRMED','REJECTED']));"
+          ] } }]
+        },
+        {
+          "name": "Admin can inspect inventory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{apiBaseUrl}}/v1/inventory"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('admin inventory access', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Customer cannot inspect inventory",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{apiBaseUrl}}/v1/inventory"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('inventory RBAC enforced', () => pm.response.to.have.status(403));"] } }]
+        }
+      ]
+    }
+  ]
+}

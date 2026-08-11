@@ -21,11 +21,15 @@ Stale connection handling (viva talking point):
 
 Table access:
 
-  The websocket-connections table has no userId GSI (adding one would
-  modify existing infra, which is out of scope for this chunk), so we
-  Scan with a userId filter. Scan is acceptable at demo scale: the table
-  holds one row per active browser tab, expected under 100 rows total.
-  The report notes `userId-index` as the production upgrade.
+  Connections are queried through `userId-index`. This prevents a push
+  invocation from reading connection rows owned by other customers and
+  keeps lookup cost proportional to the recipient's active sessions.
+
+  A catalogue price refresh is deliberately different: it contains only
+  product identifiers and a monotonically increasing promotion revision, then
+  broadcasts to all connections. The browser refetches the catalogue through
+  the authenticated HTTP API. No order, user, customer, or price data crosses
+  the public branch.
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ import logging
 import os
 
 import boto3
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger()
@@ -80,7 +84,20 @@ def _extract_status_change(event: dict) -> dict | None:
     Pipes forwards the DynamoDB stream record as-is inside `detail`, so the
     field values are in the marshalled `{"S": "..."}` form.
     """
+    if event.get("source") != "smartretailx.orders" or event.get("detail-type") not in {"order.status-changed", "fulfilment-status-changed"}:
+        return None
     detail = event.get("detail") or {}
+    if event.get("detail-type") == "fulfilment-status-changed":
+        payload = detail.get("payload") or {}
+        order_id = payload.get("orderId")
+        user_id = payload.get("userId")
+        fulfilment_status = payload.get("fulfilmentStatus")
+        if detail.get("eventType") != "fulfilment-status-changed" or not all(isinstance(v, str) for v in (order_id, user_id, fulfilment_status)):
+            return None
+        return {
+            "kind": "fulfilment", "orderId": order_id, "userId": user_id,
+            "fulfilmentStatus": fulfilment_status, "correlationId": detail.get("correlationId"),
+        }
     new_image = ((detail.get("dynamodb") or {}).get("NewImage") or {})
     if not new_image:
         return None
@@ -92,14 +109,78 @@ def _extract_status_change(event: dict) -> dict | None:
     order_id = s("orderId")
     user_id = s("userId")
     status = s("status")
+    correlation_id = s("correlationId")
     if not (order_id and user_id and status):
         return None
-    return {"orderId": order_id, "userId": user_id, "status": status}
+    return {
+        "kind": "order",
+        "orderId": order_id,
+        "userId": user_id,
+        "status": status,
+        "correlationId": correlation_id,
+    }
+
+
+def _extract_price_refresh(event: dict) -> dict | None:
+    """Return a deliberately public, non-sensitive catalogue refresh notice.
+
+    The incoming Pipe event is a trusted internal stream record, but this
+    boundary still rejects private identifiers defensively. The public payload
+    is constructed from a whitelist rather than forwarding any input object.
+    """
+    event_kind = (event.get("source"), event.get("detail-type"))
+    if event_kind not in {
+        ("smartretailx.promotions", "promotion.price-refresh"),
+        ("smartretailx.products", "product.price-refresh"),
+    }:
+        return None
+    detail = event.get("detail") or {}
+    new_image = ((detail.get("dynamodb") or {}).get("NewImage") or {})
+    if not new_image or any(field in new_image for field in ("userId", "orderId", "customerId", "email", "address")):
+        return None
+    if event_kind[0] == "smartretailx.promotions":
+        raw_ids = (new_image.get("productIds") or {}).get("L")
+        raw_revision = (new_image.get("lifecycleVersion") or {}).get("N")
+        if not isinstance(raw_ids, list) or raw_revision is None:
+            return None
+        product_ids = [entry.get("S") for entry in raw_ids if isinstance(entry, dict) and isinstance(entry.get("S"), str)]
+        # An empty list means a category-scoped promotion changed and the SPA
+        # must refetch the whole catalogue. It remains a safe public signal.
+        if len(product_ids) != len(raw_ids):
+            return None
+    else:
+        product_id = (new_image.get("productId") or {}).get("S")
+        raw_revision = (new_image.get("priceEventVersion") or {}).get("N")
+        if not isinstance(product_id, str) or not product_id or raw_revision is None:
+            return None
+        product_ids = [product_id]
+    try:
+        revision = int(raw_revision)
+    except (TypeError, ValueError):
+        return None
+    return {"productIds": product_ids, "revision": revision}
 
 
 def _connections_for(user_id: str) -> list[str]:
     ids: list[str] = []
-    kwargs: dict = {"FilterExpression": Attr("userId").eq(user_id)}
+    kwargs: dict = {
+        "IndexName": "userId-index",
+        "KeyConditionExpression": Key("userId").eq(user_id),
+        "ProjectionExpression": "connectionId",
+    }
+    while True:
+        response = _table().query(**kwargs)
+        ids.extend(item["connectionId"] for item in response.get("Items", []))
+        token = response.get("LastEvaluatedKey")
+        if not token:
+            return ids
+        kwargs["ExclusiveStartKey"] = token
+
+
+def _all_connections() -> list[str]:
+    """Paginated public-broadcast lookup. Only connection IDs are projected."""
+    ids: list[str] = []
+    kwargs: dict = {"ProjectionExpression": "connectionId"}
     while True:
         response = _table().scan(**kwargs)
         ids.extend(item["connectionId"] for item in response.get("Items", []))
@@ -132,16 +213,41 @@ def _post(connection_id: str, payload: dict) -> str:
 
 
 def lambda_handler(event: dict, context) -> dict:
+    refresh = _extract_price_refresh(event)
+    if refresh:
+        payload = {
+            "type": "catalogue.price-refresh",
+            "productIds": refresh["productIds"],
+            "revision": refresh["revision"],
+        }
+        connections = _all_connections()
+        counts = {"delivered": 0, "stale": 0, "skipped": 0}
+        for connection_id in connections:
+            outcome = _post(connection_id, payload)
+            counts[outcome] += 1
+        logger.info("ws push: public catalogue refresh %s", counts)
+        return {"pushed": counts["delivered"], "counts": counts, "public": True}
+
     change = _extract_status_change(event)
     if not change:
         logger.info("ws push: not a status-change event, ignoring")
         return {"pushed": 0, "reason": "not a status-change event"}
 
-    payload = {
-        "type": "order.status-changed",
-        "orderId": change["orderId"],
-        "status": change["status"],
-    }
+    payload = (
+        {
+            "type": "order.fulfilment-status-changed",
+            "orderId": change["orderId"],
+            "fulfilmentStatus": change["fulfilmentStatus"],
+            "correlationId": change["correlationId"],
+        }
+        if change["kind"] == "fulfilment"
+        else {
+            "type": "order.status-changed",
+            "orderId": change["orderId"],
+            "status": change["status"],
+            "correlationId": change["correlationId"],
+        }
+    )
 
     connections = _connections_for(change["userId"])
     if not connections:

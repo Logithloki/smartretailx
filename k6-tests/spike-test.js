@@ -1,8 +1,9 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { BASE_URL, getHeaders } from './config.js';
+import { BASE_URL, getHeaders, validateConfig } from './config.js';
 
 export const options = {
+  summaryTrendStats: ['min', 'med', 'avg', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],
   stages: [
     { duration: '1m', target: 5 }, // Baseline
     { duration: '1m', target: 150 }, // Sudden spike
@@ -19,8 +20,12 @@ export const options = {
   },
 };
 
+export function setup() {
+  return validateConfig();
+}
+
 export default function () {
-  const res = http.get(`${BASE_URL}/api/v1/products`, { headers: getHeaders() });
+  const res = http.get(`${BASE_URL}/v1/products`, { headers: getHeaders() });
   check(res, { 'status is 200': (r) => r.status === 200 });
   sleep(1);
 }

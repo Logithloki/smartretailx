@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
-from srx_common import Authenticator, Principal, configure_logging
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from srx_common import Authenticator, Principal, configure_logging, instrument_fastapi
 
 from .config import Settings, get_settings
 from .models import HealthResponse, UserListResponse, UserProfile
 from .services import UserNotFound, build_repository
 
 logger = logging.getLogger(__name__)
+
+
+def canonical_username(username: str) -> str:
+    """Cognito email usernames are compared case-insensitively."""
+    return username.strip().casefold()
 
 
 def create_app(settings: Settings | None = None, repository=None) -> FastAPI:
@@ -31,6 +36,7 @@ def create_app(settings: Settings | None = None, repository=None) -> FastAPI:
         version="1.0.0",
         description="Cognito-backed user profiles and directory.",
     )
+    instrument_fastapi(app, settings.service_name)
 
     @app.get("/health", response_model=HealthResponse, tags=["health"])
     def health() -> HealthResponse:
@@ -62,7 +68,8 @@ def create_app(settings: Settings | None = None, repository=None) -> FastAPI:
     @app.get("/v1/users/{username}", response_model=UserProfile, tags=["users"])
     def get_user(username: str, caller: Principal = Depends(auth.current_user)) -> UserProfile:
         """Admins may read anyone; everyone else may read only themselves."""
-        is_self = username in {caller.username, caller.subject}
+        username = canonical_username(username)
+        is_self = username in {canonical_username(caller.username), canonical_username(caller.subject)}
         if not is_self and not caller.in_group("admin"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -74,6 +81,21 @@ def create_app(settings: Settings | None = None, repository=None) -> FastAPI:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="user not found"
             ) from None
+
+    @app.delete(
+        "/v1/users/{username}", status_code=status.HTTP_204_NO_CONTENT, tags=["admin"],
+        dependencies=[Depends(auth.requires("admin"))],
+        summary="Delete a Cognito user as an administrator",
+    )
+    def delete_user(username: str, caller: Principal = Depends(auth.current_user)) -> Response:
+        username = canonical_username(username)
+        if username in {canonical_username(caller.username), canonical_username(caller.subject)}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="administrators cannot delete themselves")
+        try:
+            repo.delete_user(username)
+        except UserNotFound:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found") from None
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return app
 

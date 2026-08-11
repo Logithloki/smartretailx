@@ -1,0 +1,77 @@
+name: reusable-deploy-frontend
+
+on:
+  workflow_call:
+    inputs:
+      release_run_id: { required: true, type: string }
+      release_id: { required: true, type: string }
+      role_arn: { required: true, type: string }
+      environment_name: { required: true, type: string }
+      bucket_name: { required: true, type: string }
+      distribution_id: { required: true, type: string }
+      api_base_url: { required: true, type: string }
+      websocket_url: { required: true, type: string }
+      cognito_authority: { required: true, type: string }
+      cognito_domain: { required: true, type: string }
+      cognito_client_id: { required: true, type: string }
+      redirect_uri: { required: true, type: string }
+      logout_uri: { required: true, type: string }
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: smartretailx-${{ inputs.environment_name }}-frontend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment: ${{ inputs.environment_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-release-artifacts
+          path: release
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ github.token }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role_arn }}
+          aws-region: eu-west-1
+      - name: Materialize validated runtime configuration beside immutable SPA
+        shell: bash
+        run: |
+          mkdir dist
+          tar -C dist -xzf release/smartretailx-spa.tgz
+          jq -n \
+            --arg apiBaseUrl '${{ inputs.api_base_url }}' \
+            --arg websocketUrl '${{ inputs.websocket_url }}' \
+            --arg cognitoAuthority '${{ inputs.cognito_authority }}' \
+            --arg cognitoDomain '${{ inputs.cognito_domain }}' \
+            --arg cognitoClientId '${{ inputs.cognito_client_id }}' \
+            --arg redirectUri '${{ inputs.redirect_uri }}' \
+            --arg logoutUri '${{ inputs.logout_uri }}' \
+            --arg environment '${{ inputs.environment_name }}' \
+            --arg releaseId '${{ inputs.release_id }}' \
+            '{apiBaseUrl,websocketUrl,cognitoAuthority,cognitoDomain,cognitoClientId,redirectUri,logoutUri,environment,releaseId}' \
+            > dist/config.json
+          jq -e 'all(.apiBaseUrl,.websocketUrl,.cognitoAuthority,.cognitoDomain,.cognitoClientId,.redirectUri,.logoutUri,.environment,.releaseId; length > 0)' dist/config.json
+      - name: Store versioned release and update live pointers
+        shell: bash
+        run: |
+          prefix="releases/${{ inputs.release_id }}"
+          aws s3 sync dist "s3://${{ inputs.bucket_name }}/$prefix/" --delete
+          aws s3 sync dist/assets "s3://${{ inputs.bucket_name }}/assets/" \
+            --cache-control 'public,max-age=31536000,immutable' --delete
+          aws s3 cp dist/index.html "s3://${{ inputs.bucket_name }}/index.html" \
+            --cache-control 'no-cache,no-store,must-revalidate'
+          aws s3 cp dist/config.json "s3://${{ inputs.bucket_name }}/config.json" \
+            --cache-control 'no-cache,no-store,must-revalidate'
+          printf '{"releaseId":"%s","sourceRun":"%s"}\n' '${{ inputs.release_id }}' '${{ inputs.release_run_id }}' > current-release.json
+          aws s3 cp current-release.json "s3://${{ inputs.bucket_name }}/release.json" \
+            --cache-control 'no-cache,no-store,must-revalidate'
+          aws cloudfront create-invalidation --distribution-id '${{ inputs.distribution_id }}' \
+            --paths '/index.html' '/config.json' '/release.json' >/dev/null

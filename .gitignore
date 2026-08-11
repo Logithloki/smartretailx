@@ -3,6 +3,11 @@
 *.tfstate
 *.tfstate.backup
 *.tfvars
+*.tfplan
+*.tfplan.json
+infra/*-plan.txt
+out.json
+test_payload.json
 
 # Terraform Lambda build output (vendored Linux ARM64 wheels + zips).
 # Rebuild locally with `make lambda-build` before `terraform apply`.
@@ -35,3 +40,13 @@ htmlcov/
 docs/aws-values.txt
 # pytest
 .pytest_cache/
+*.pytest-tmp-*/
+.audit-tmp-*/
+.pytest-tmp-*/
+services/**/.audit-tmp-*/
+node_modules/
+frontend/dist/
+# Terraform archive_file output (reproducible from infra/security.tf)
+/infra/cognito_auto_confirm.zip
+frontend/test-results/
+frontend/playwright-report/

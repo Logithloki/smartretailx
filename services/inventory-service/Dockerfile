@@ -17,6 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY common/srx_common ./srx_common
 COPY inventory-service/app ./app
+COPY inventory-service/alembic.ini ./alembic.ini
+COPY inventory-service/migrations ./migrations
 
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser /app
 USER appuser

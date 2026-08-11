@@ -31,7 +31,7 @@ place_order() { # product qty -> orderId (exits on anything but 201)
   local body http
   body="$(curl -s -w '\n%{http_code}' -X POST "$ORDER/v1/orders" \
     -H "Content-Type: application/json" "${AUTH[@]}" \
-    -d "{\"items\":[{\"productId\":\"$1\",\"quantity\":$2,\"unitPrice\":\"10.00\"}]}")"
+    -d "{\"items\":[{\"productId\":\"$1\",\"quantity\":$2}]}")"
   http="$(printf '%s' "$body" | tail -n1)"
   body="$(printf '%s' "$body" | sed '$d')"
   if [ "$http" != "201" ]; then

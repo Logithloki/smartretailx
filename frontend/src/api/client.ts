@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "../auth-config";
+import { getRuntimeConfig } from "../config/runtime-config";
 
 /*
  * Thin fetch wrapper that centralises three concerns for the whole SPA:
@@ -69,7 +69,7 @@ export async function apiFetch<T>(
     headers["Idempotency-Key"] = newIdempotencyKey();
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${getRuntimeConfig().apiBaseUrl}${path}`, {
     method: opts.method ?? (body ? "POST" : "GET"),
     headers,
     body,

@@ -19,6 +19,17 @@ class StockListResponse(BaseModel):
     count: int
 
 
+class Availability(BaseModel):
+    productId: str
+    quantity: int = Field(..., ge=0)
+    available: bool
+
+
+class AvailabilityResponse(BaseModel):
+    availability: list[Availability]
+    count: int
+
+
 class StockAdjustment(BaseModel):
     """Admin stock correction (backlog item 30).
 
@@ -47,6 +58,13 @@ class ReservationResult:
     @staticmethod
     def failure(reason: str) -> "ReservationResult":
         return ReservationResult(ok=False, reason=reason)
+
+
+@dataclass(frozen=True)
+class ProcessingOutcome:
+    eventType: str
+    duplicate: bool = False
+    reason: str | None = None
 
 
 class HealthResponse(BaseModel):

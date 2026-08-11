@@ -1,0 +1,71 @@
+name: reusable-live-smoke-tests
+
+on:
+  workflow_call:
+    inputs:
+      environment_name: { required: true, type: string }
+      frontend_url: { required: true, type: string }
+      api_base_url: { required: true, type: string }
+      websocket_url: { required: true, type: string }
+    secrets:
+      ACCESS_TOKEN: { required: true }
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    environment: ${{ inputs.environment_name }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: smartretailx-${{ inputs.environment_name }}-smoke
+      cancel-in-progress: false
+    env:
+      ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      FRONTEND_URL: ${{ inputs.frontend_url }}
+      API_BASE_URL: ${{ inputs.api_base_url }}
+      WEBSOCKET_URL: ${{ inputs.websocket_url }}
+    steps:
+      - name: Frontend, authenticated API, Saga and WebSocket smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          curl --fail --silent --show-error "$FRONTEND_URL/" > /dev/null
+          products=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $ACCESS_TOKEN" "$API_BASE_URL/v1/products")
+          jq -e '.products | length > 0' <<<"$products" > /dev/null
+          product_id=$(jq -r '.products[0].productId' <<<"$products")
+          key="smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          order=$(jq -nc --arg id "$product_id" \
+            '{items:[{productId:$id,quantity:1}],loadTest:true}' |
+            curl --fail --silent --show-error -X POST "$API_BASE_URL/v1/orders" \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              -H "Content-Type: application/json" -H "Idempotency-Key: $key" --data-binary @-)
+          order_id=$(jq -er '.orderId' <<<"$order")
+          terminal=false
+          for attempt in {1..30}; do
+            state=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              "$API_BASE_URL/v1/orders/$order_id" | jq -r .status)
+            if [[ "$state" == CONFIRMED || "$state" == REJECTED ]]; then terminal=true; break; fi
+            sleep 2
+          done
+          test "$terminal" = true
+          node <<'NODE'
+          const target = new URL(process.env.WEBSOCKET_URL);
+          target.searchParams.set("token", process.env.ACCESS_TOKEN);
+          const socket = new WebSocket(target);
+          const timeout = setTimeout(() => { console.error("WebSocket timeout"); process.exit(1); }, 10000);
+          socket.addEventListener("open", () => { clearTimeout(timeout); socket.close(); });
+          socket.addEventListener("close", () => process.exit(0));
+          socket.addEventListener("error", () => { clearTimeout(timeout); process.exit(1); });
+          NODE
+          jq -n --arg orderId "$order_id" --arg outcome "$state" \
+            --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{status:"PASS",orderId,outcome,timestamp}' > evidence/smoke-result.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ inputs.environment_name }}
+          path: evidence/

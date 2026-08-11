@@ -1,0 +1,4 @@
+pydantic==2.10.4
+pydantic-settings==2.7.0
+PyJWT[crypto]==2.13.0
+aws-lambda-powertools==3.4.0

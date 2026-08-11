@@ -1,0 +1,285 @@
+name: Existing baseline same-state release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: Main-branch immutable release run ID
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: smartretailx-existing-baseline-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      order_digest: ${{ steps.release.outputs.order_digest }}
+      inventory_digest: ${{ steps.release.outputs.inventory_digest }}
+      product_digest: ${{ steps.release.outputs.product_digest }}
+      user_digest: ${{ steps.release.outputs.user_digest }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: release
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ github.token }}
+      - id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '([.order_service_digest,.inventory_service_digest,.product_service_digest,.user_service_digest]
+            | all(test("^sha256:[0-9a-f]{64}$")))' release/release-manifest.json >/dev/null
+          echo "release_id=$(jq -r .release_id release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          for service in order inventory product user; do
+            echo "${service}_digest=$(jq -r ".${service}_service_digest" release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          done
+
+  plan:
+    needs: release
+    environment: development
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Materialize immutable image digests
+        working-directory: infra
+        env:
+          ORDER: ${{ needs.release.outputs.order_digest }}
+          INVENTORY: ${{ needs.release.outputs.inventory_digest }}
+          PRODUCT: ${{ needs.release.outputs.product_digest }}
+          USER: ${{ needs.release.outputs.user_digest }}
+        run: |
+          jq -n --arg order "$ORDER" --arg inventory "$INVENTORY" \
+            --arg product "$PRODUCT" --arg user "$USER" \
+            '{service_image_digests:{order:$order,inventory:$inventory,product:$product,user:$user}}' \
+            > release.auto.tfvars.json
+      - name: Refuse an empty, isolated, or wrong Terraform state
+        working-directory: infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No backend override: backend.tf is the deployed baseline lineage,
+          # smartretailx/terraform.tfstate. Never substitute a profile backend.
+          terraform init -reconfigure
+          terraform state list > "$RUNNER_TEMP/baseline-state.txt"
+          python ../scripts/check_baseline_plan.py --state-list "$RUNNER_TEMP/baseline-state.txt"
+      - name: Produce and guard the same-state baseline plan
+        working-directory: infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform plan -var=environment_name=baseline -var=project_name=smartretailx \
+            -var=live=true -var-file=release.auto.tfvars.json -out=tfplan
+          terraform show -json tfplan > tfplan.json
+          python ../scripts/check_baseline_plan.py tfplan.json
+          jq '{add:([.resource_changes[]? | select(.change.actions == ["create"])]|length),change:([.resource_changes[]? | select(.change.actions == ["update"])]|length),destroy:([.resource_changes[]? | select(.change.actions | index("delete"))]|length)}' \
+            tfplan.json > plan-summary.json
+          sha256sum tfplan > tfplan.sha256
+          cat plan-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-baseline-plan
+          path: |
+            infra/tfplan
+            infra/tfplan.sha256
+            infra/tfplan.json
+            infra/plan-summary.json
+          retention-days: 2
+
+  snapshot_rollback_targets:
+    needs: [release, plan]
+    environment: development
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Capture currently active baseline release pointers
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n --arg release '${{ needs.release.outputs.release_id }}' \
+            '{targetRelease:$release,ecs:{},lambdas:{},frontend:null}' > rollback.json
+          for service in order inventory product user; do
+            task=$(aws ecs describe-services --cluster '${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}' \
+              --services '${{ vars.SMARTRETAILX_PROJECT_NAME }}-'"$service"'-service' \
+              --query 'services[0].taskDefinition' --output text)
+            [[ "$task" == arn:* ]]
+            jq --arg service "$service" --arg task "$task" '.ecs[$service]=$task' rollback.json > next.json
+            mv next.json rollback.json
+          done
+          for suffix in notification stock-reconciliation ws-authorizer ws-connect ws-disconnect ws-push; do
+            version=$(aws lambda get-alias --function-name '${{ vars.SMARTRETAILX_PROJECT_NAME }}-'"$suffix" \
+              --name development --query FunctionVersion --output text)
+            jq --arg suffix "$suffix" --arg version "$version" '.lambdas[$suffix]=$version' rollback.json > next.json
+            mv next.json rollback.json
+          done
+          previous=$(aws s3 cp 's3://${{ vars.SMARTRETAILX_SPA_BUCKET }}/release.json' - 2>/dev/null | jq -r '.releaseId // empty' || true)
+          jq --arg previous "$previous" '.frontend=($previous | select(length>0))' rollback.json > next.json
+          mv next.json rollback.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: baseline-rollback-targets
+          path: rollback.json
+          retention-days: 14
+
+  apply_reviewed_plan:
+    needs: [plan, snapshot_rollback_targets]
+    environment: development
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - uses: actions/download-artifact@v4
+        with:
+          name: reviewed-baseline-plan
+          path: infra
+      - name: Apply only the human-reviewed baseline plan
+        working-directory: infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check tfplan.sha256
+          terraform init -reconfigure
+          terraform state list > "$RUNNER_TEMP/baseline-state.txt"
+          python ../scripts/check_baseline_plan.py --state-list "$RUNNER_TEMP/baseline-state.txt"
+          terraform apply tfplan
+
+  ecs:
+    needs: [release, apply_reviewed_plan]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { service: order, digest_output: order_digest, migrate: false }
+          - { service: inventory, digest_output: inventory_digest, migrate: true }
+          - { service: product, digest_output: product_digest, migrate: false }
+          - { service: user, digest_output: user_digest, migrate: false }
+    uses: ./.github/workflows/reusable/deploy-ecs.yml
+    with:
+      service: ${{ matrix.service }}
+      image_digest: ${{ needs.release.outputs[matrix.digest_output] }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: development
+      cluster_name: ${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}
+      project_name: ${{ vars.SMARTRETAILX_PROJECT_NAME }}
+      run_migration: ${{ matrix.migrate }}
+
+  lambdas:
+    needs: [release, ecs]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { component: notification-lambda, suffix: notification }
+          - { component: reconciliation-lambda, suffix: stock-reconciliation }
+          - { component: ws-authorizer-lambda, suffix: ws-authorizer }
+          - { component: ws-connect-lambda, suffix: ws-connect }
+          - { component: ws-disconnect-lambda, suffix: ws-disconnect }
+          - { component: ws-push-lambda, suffix: ws-push }
+          - { component: order-outbox-publisher, suffix: order-outbox-publisher }
+    uses: ./.github/workflows/reusable/deploy-lambda.yml
+    with:
+      component: ${{ matrix.component }}
+      function_name: ${{ format('{0}-{1}', vars.SMARTRETAILX_PROJECT_NAME, matrix.suffix) }}
+      alias_name: development
+      release_run_id: ${{ inputs.release_run_id }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: development
+
+  frontend:
+    needs: [release, ecs, lambdas]
+    uses: ./.github/workflows/reusable/deploy-frontend.yml
+    with:
+      release_run_id: ${{ inputs.release_run_id }}
+      release_id: ${{ needs.release.outputs.release_id }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: development
+      bucket_name: ${{ vars.SMARTRETAILX_SPA_BUCKET }}
+      distribution_id: ${{ vars.SMARTRETAILX_DISTRIBUTION_ID }}
+      api_base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      websocket_url: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
+      cognito_authority: ${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}
+      cognito_domain: ${{ vars.SMARTRETAILX_COGNITO_DOMAIN }}
+      cognito_client_id: ${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}
+      redirect_uri: ${{ format('{0}/callback', vars.SMARTRETAILX_PUBLIC_URL) }}
+      logout_uri: ${{ format('{0}/', vars.SMARTRETAILX_PUBLIC_URL) }}
+
+  verify:
+    needs: frontend
+    uses: ./.github/workflows/reusable/smoke-tests.yml
+    with:
+      environment_name: development
+      frontend_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      api_base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      websocket_url: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
+    secrets:
+      ACCESS_TOKEN: ${{ secrets.SMARTRETAILX_SMOKE_ACCESS_TOKEN }}
+
+  automatic_rollback:
+    if: >-
+      always() && needs.snapshot_rollback_targets.result == 'success' &&
+      (needs.ecs.result == 'failure' || needs.lambdas.result == 'failure' ||
+       needs.frontend.result == 'failure' || needs.verify.result == 'failure')
+    needs: [snapshot_rollback_targets, ecs, lambdas, frontend, verify]
+    environment: development
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: baseline-rollback-targets
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Restore the previous ECS, Lambda and SPA pointers
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in order inventory product user; do
+            task=$(jq -r --arg service "$service" '.ecs[$service]' rollback.json)
+            aws ecs update-service --cluster '${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}' \
+              --service '${{ vars.SMARTRETAILX_PROJECT_NAME }}-'"$service"'-service' \
+              --task-definition "$task" >/dev/null
+          done
+          aws ecs wait services-stable --cluster '${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}' \
+            --services $(for service in order inventory product user; do printf '%s ' '${{ vars.SMARTRETAILX_PROJECT_NAME }}-'"$service"'-service'; done)
+          for suffix in notification stock-reconciliation ws-authorizer ws-connect ws-disconnect ws-push; do
+            version=$(jq -r --arg suffix "$suffix" '.lambdas[$suffix]' rollback.json)
+            aws lambda update-alias --function-name '${{ vars.SMARTRETAILX_PROJECT_NAME }}-'"$suffix" \
+              --name development --function-version "$version" >/dev/null
+          done
+          previous=$(jq -r '.frontend // empty' rollback.json)
+          if [[ -n "$previous" ]]; then
+            aws s3 sync 's3://${{ vars.SMARTRETAILX_SPA_BUCKET }}/releases/'"$previous"'/' \
+              's3://${{ vars.SMARTRETAILX_SPA_BUCKET }}/'
+            printf '{"releaseId":"%s","rollback":true}\n' "$previous" > release.json
+            aws s3 cp release.json 's3://${{ vars.SMARTRETAILX_SPA_BUCKET }}/release.json' \
+              --cache-control 'no-cache,no-store,must-revalidate'
+            aws cloudfront create-invalidation --distribution-id '${{ vars.SMARTRETAILX_DISTRIBUTION_ID }}' \
+              --paths '/index.html' '/config.json' '/release.json' >/dev/null
+          fi

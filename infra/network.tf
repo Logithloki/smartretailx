@@ -8,6 +8,12 @@ resource "aws_vpc" "main" {
   }
 }
 
+# Explicitly manage the otherwise permissive default security group. All
+# workload communication uses purpose-built groups in security.tf.
+resource "aws_default_security_group" "main" {
+  vpc_id = aws_vpc.main.id
+}
+
 # ─── INTERNET GATEWAY ─────────────────────────────────────────
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
