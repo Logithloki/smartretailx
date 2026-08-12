@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import json
 
 import boto3
 import pytest
 
+from app.events import LocalInlineOutboxPublisher
 from app.models import FulfilmentStatus, Order, OrderItem, OrderLineRequest, OrderStatus
 from app.pricing import PricingCatalog
 from app.services import OrderNotFound
@@ -210,6 +212,31 @@ def test_outbox_amounts_are_exact_decimals(client):
     outbox = boto3.resource("dynamodb", region_name="eu-west-1").Table(OUTBOX_TABLE)
     envelope = outbox.get_item(Key={"eventId": f"order-created#{order_id}"})["Item"]["payload"]
     assert envelope["payload"]["items"][0]["effectiveUnitPrice"] == "0.10"
+
+
+def test_local_outbox_relay_serializes_dynamodb_decimals_before_sqs_delivery(settings, client):
+    """A DynamoDB-read order command remains valid JSON at the SQS boundary."""
+    order_id = client.post("/v1/orders", json=_payload(), headers=auth_header()).json()["orderId"]
+
+    LocalInlineOutboxPublisher(settings).publish(f"order-created#{order_id}")
+
+    message = boto3.client("sqs", region_name="eu-west-1").receive_message(
+        QueueUrl=settings.orders_queue_url,
+    )["Messages"][0]
+    envelope = json.loads(message["Body"])
+    assert envelope["eventType"] == "order-created"
+    assert envelope["payload"] == {
+        "orderId": order_id,
+        "userId": "user-1",
+        "userEmail": None,
+        "loadTest": False,
+        "totalAmount": "39.98",
+        "items": [{
+            "productId": "prod-laptop-001",
+            "quantity": "2",
+            "effectiveUnitPrice": "19.99",
+        }],
+    }
 
 
 def test_order_and_outbox_write_are_atomic(settings, repository):
