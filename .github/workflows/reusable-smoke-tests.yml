@@ -4,11 +4,6 @@ on:
   workflow_call:
     inputs:
       environment_name: { required: true, type: string }
-      frontend_url: { required: true, type: string }
-      api_base_url: { required: true, type: string }
-      websocket_url: { required: true, type: string }
-    secrets:
-      ACCESS_TOKEN: { required: true }
 
 permissions:
   contents: read
@@ -22,10 +17,17 @@ jobs:
       cancel-in-progress: false
     env:
       ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-      FRONTEND_URL: ${{ inputs.frontend_url }}
-      API_BASE_URL: ${{ inputs.api_base_url }}
-      WEBSOCKET_URL: ${{ inputs.websocket_url }}
+      FRONTEND_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      API_BASE_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      WEBSOCKET_URL: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
     steps:
+      - name: Validate smoke Environment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for setting in ACCESS_TOKEN FRONTEND_URL API_BASE_URL WEBSOCKET_URL; do
+            [[ -n "${!setting:-}" ]] || { echo "Missing required Environment setting: $setting"; exit 1; }
+          done
       - name: Frontend, authenticated API, Saga and WebSocket smoke
         shell: bash
         run: |
@@ -63,7 +65,7 @@ jobs:
           NODE
           jq -n --arg orderId "$order_id" --arg outcome "$state" \
             --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{status:"PASS",orderId,outcome,timestamp}' > evidence/smoke-result.json
+            '{status:"PASS",orderId:$orderId,outcome:$outcome,timestamp:$timestamp}' > evidence/smoke-result.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
