@@ -99,3 +99,11 @@ def test_pr_ci_and_release_keep_their_minimum_explicit_permissions() -> None:
         "contents": "read",
         "pull-requests": "read",
     }
+
+
+def test_route_and_event_contract_job_installs_its_yaml_parser() -> None:
+    """The workflow test module imports yaml before architecture test collection."""
+    job = _workflow(WORKFLOWS / "pr-ci.yml")["jobs"]["route-and-event-contracts"]
+    install = next(step["run"] for step in job["steps"] if "pip install" in step.get("run", ""))
+
+    assert "PyYAML==6.0.3" in install
