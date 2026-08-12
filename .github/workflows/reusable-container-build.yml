@@ -92,6 +92,8 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           version: v0.69.3
+        env:
+          TRIVY_PLATFORM: linux/arm64
       - name: Generate CycloneDX SBOM for the exact digest
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
@@ -99,6 +101,8 @@ jobs:
           format: cyclonedx
           output: sbom-${{ inputs.service }}.cdx.json
           version: v0.69.3
+        env:
+          TRIVY_PLATFORM: linux/arm64
       - uses: actions/upload-artifact@v4
         with:
           name: image-${{ inputs.service }}
