@@ -5,17 +5,7 @@ on:
     inputs:
       release_run_id: { required: true, type: string }
       release_id: { required: true, type: string }
-      role_arn: { required: true, type: string }
       environment_name: { required: true, type: string }
-      bucket_name: { required: true, type: string }
-      distribution_id: { required: true, type: string }
-      api_base_url: { required: true, type: string }
-      websocket_url: { required: true, type: string }
-      cognito_authority: { required: true, type: string }
-      cognito_domain: { required: true, type: string }
-      cognito_client_id: { required: true, type: string }
-      redirect_uri: { required: true, type: string }
-      logout_uri: { required: true, type: string }
 
 permissions:
   id-token: write
@@ -30,6 +20,15 @@ jobs:
   deploy:
     environment: ${{ inputs.environment_name }}
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_ROLE_ARN: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      SPA_BUCKET: ${{ vars.SMARTRETAILX_SPA_BUCKET }}
+      DISTRIBUTION_ID: ${{ vars.SMARTRETAILX_DISTRIBUTION_ID }}
+      PUBLIC_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      WEBSOCKET_URL: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
+      COGNITO_AUTHORITY: ${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}
+      COGNITO_DOMAIN: ${{ vars.SMARTRETAILX_COGNITO_DOMAIN }}
+      COGNITO_CLIENT_ID: ${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -37,9 +36,16 @@ jobs:
           path: release
           run-id: ${{ inputs.release_run_id }}
           github-token: ${{ github.token }}
+      - name: Validate environment deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for setting in DEPLOY_ROLE_ARN SPA_BUCKET DISTRIBUTION_ID PUBLIC_URL WEBSOCKET_URL COGNITO_AUTHORITY COGNITO_DOMAIN COGNITO_CLIENT_ID; do
+            [[ -n "${!setting:-}" ]] || { echo "Missing required Environment variable: $setting"; exit 1; }
+          done
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.role_arn }}
+          role-to-assume: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
           aws-region: eu-west-1
       - name: Materialize validated runtime configuration beside immutable SPA
         shell: bash
@@ -47,31 +53,31 @@ jobs:
           mkdir dist
           tar -C dist -xzf release/smartretailx-spa.tgz
           jq -n \
-            --arg apiBaseUrl '${{ inputs.api_base_url }}' \
-            --arg websocketUrl '${{ inputs.websocket_url }}' \
-            --arg cognitoAuthority '${{ inputs.cognito_authority }}' \
-            --arg cognitoDomain '${{ inputs.cognito_domain }}' \
-            --arg cognitoClientId '${{ inputs.cognito_client_id }}' \
-            --arg redirectUri '${{ inputs.redirect_uri }}' \
-            --arg logoutUri '${{ inputs.logout_uri }}' \
+            --arg apiBaseUrl "${PUBLIC_URL%/}" \
+            --arg websocketUrl "$WEBSOCKET_URL" \
+            --arg cognitoAuthority "$COGNITO_AUTHORITY" \
+            --arg cognitoDomain "$COGNITO_DOMAIN" \
+            --arg cognitoClientId "$COGNITO_CLIENT_ID" \
+            --arg redirectUri "${PUBLIC_URL%/}/callback" \
+            --arg logoutUri "${PUBLIC_URL%/}/" \
             --arg environment '${{ inputs.environment_name }}' \
             --arg releaseId '${{ inputs.release_id }}' \
-            '{apiBaseUrl,websocketUrl,cognitoAuthority,cognitoDomain,cognitoClientId,redirectUri,logoutUri,environment,releaseId}' \
+            '{apiBaseUrl:$apiBaseUrl,websocketUrl:$websocketUrl,cognitoAuthority:$cognitoAuthority,cognitoDomain:$cognitoDomain,cognitoClientId:$cognitoClientId,redirectUri:$redirectUri,logoutUri:$logoutUri,environment:$environment,releaseId:$releaseId}' \
             > dist/config.json
-          jq -e 'all(.apiBaseUrl,.websocketUrl,.cognitoAuthority,.cognitoDomain,.cognitoClientId,.redirectUri,.logoutUri,.environment,.releaseId; length > 0)' dist/config.json
+          jq -e '[.apiBaseUrl,.websocketUrl,.cognitoAuthority,.cognitoDomain,.cognitoClientId,.redirectUri,.logoutUri,.environment,.releaseId] | all(.[]; type == "string" and length > 0)' dist/config.json
       - name: Store versioned release and update live pointers
         shell: bash
         run: |
           prefix="releases/${{ inputs.release_id }}"
-          aws s3 sync dist "s3://${{ inputs.bucket_name }}/$prefix/" --delete
-          aws s3 sync dist/assets "s3://${{ inputs.bucket_name }}/assets/" \
+          aws s3 sync dist "s3://$SPA_BUCKET/$prefix/" --delete
+          aws s3 sync dist/assets "s3://$SPA_BUCKET/assets/" \
             --cache-control 'public,max-age=31536000,immutable' --delete
-          aws s3 cp dist/index.html "s3://${{ inputs.bucket_name }}/index.html" \
+          aws s3 cp dist/index.html "s3://$SPA_BUCKET/index.html" \
             --cache-control 'no-cache,no-store,must-revalidate'
-          aws s3 cp dist/config.json "s3://${{ inputs.bucket_name }}/config.json" \
+          aws s3 cp dist/config.json "s3://$SPA_BUCKET/config.json" \
             --cache-control 'no-cache,no-store,must-revalidate'
           printf '{"releaseId":"%s","sourceRun":"%s"}\n' '${{ inputs.release_id }}' '${{ inputs.release_run_id }}' > current-release.json
-          aws s3 cp current-release.json "s3://${{ inputs.bucket_name }}/release.json" \
+          aws s3 cp current-release.json "s3://$SPA_BUCKET/release.json" \
             --cache-control 'no-cache,no-store,must-revalidate'
-          aws cloudfront create-invalidation --distribution-id '${{ inputs.distribution_id }}' \
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
             --paths '/index.html' '/config.json' '/release.json' >/dev/null

@@ -166,10 +166,7 @@ jobs:
     with:
       service: ${{ matrix.service }}
       image_digest: ${{ needs.release.outputs[matrix.digest_output] }}
-      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
       environment_name: production
-      cluster_name: ${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}
-      project_name: ${{ vars.SMARTRETAILX_PROJECT_NAME }}
       run_migration: ${{ matrix.migrate }}
 
   lambdas:
@@ -188,10 +185,8 @@ jobs:
     uses: ./.github/workflows/reusable-deploy-lambda.yml
     with:
       component: ${{ matrix.component }}
-      function_name: ${{ format('{0}-{1}', vars.SMARTRETAILX_PROJECT_NAME, matrix.suffix) }}
-      alias_name: production
+      function_suffix: ${{ matrix.suffix }}
       release_run_id: ${{ inputs.release_run_id }}
-      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
       environment_name: production
 
   frontend:
@@ -200,28 +195,13 @@ jobs:
     with:
       release_run_id: ${{ inputs.release_run_id }}
       release_id: ${{ needs.release.outputs.release_id }}
-      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
       environment_name: production
-      bucket_name: ${{ vars.SMARTRETAILX_SPA_BUCKET }}
-      distribution_id: ${{ vars.SMARTRETAILX_DISTRIBUTION_ID }}
-      api_base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
-      websocket_url: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
-      cognito_authority: ${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}
-      cognito_domain: ${{ vars.SMARTRETAILX_COGNITO_DOMAIN }}
-      cognito_client_id: ${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}
-      redirect_uri: ${{ format('{0}/callback', vars.SMARTRETAILX_PUBLIC_URL) }}
-      logout_uri: ${{ format('{0}/', vars.SMARTRETAILX_PUBLIC_URL) }}
 
   verify:
     needs: frontend
     uses: ./.github/workflows/reusable-smoke-tests.yml
     with:
       environment_name: production
-      frontend_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
-      api_base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
-      websocket_url: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
-    secrets:
-      ACCESS_TOKEN: ${{ secrets.SMARTRETAILX_SMOKE_ACCESS_TOKEN }}
 
   automatic-rollback:
     if: >-
@@ -278,9 +258,3 @@ jobs:
     uses: ./.github/workflows/reusable-browser-e2e.yml
     with:
       environment_name: production
-      base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
-    secrets:
-      CUSTOMER_USERNAME: ${{ secrets.SMARTRETAILX_CUSTOMER_USERNAME }}
-      CUSTOMER_PASSWORD: ${{ secrets.SMARTRETAILX_CUSTOMER_PASSWORD }}
-      ADMIN_USERNAME: ${{ secrets.SMARTRETAILX_ADMIN_USERNAME }}
-      ADMIN_PASSWORD: ${{ secrets.SMARTRETAILX_ADMIN_PASSWORD }}
