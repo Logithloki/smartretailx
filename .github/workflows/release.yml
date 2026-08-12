@@ -61,8 +61,8 @@ jobs:
         run: |
           npm ci
           npm run build
-          tar -C dist -czf ../smartretailx-spa.tgz .
-          sha256sum ../smartretailx-spa.tgz > ../smartretailx-spa.tgz.sha256
+          tar -C dist -czf smartretailx-spa.tgz .
+          sha256sum smartretailx-spa.tgz > smartretailx-spa.tgz.sha256
       - name: Package Lambda source artifacts deterministically
         shell: bash
         run: |
