@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.models import ReservationLine
+from conftest import auth_header
 
 
 def line(product_id: str, quantity: int) -> ReservationLine:
@@ -24,6 +25,26 @@ def test_get_unknown_product_is_none(repository):
 
 def test_list_all(repository):
     assert len(repository.list_all()) == 3
+
+
+def test_customer_availability_is_a_bounded_read_only_projection(settings, repository):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    from app.resilience import ResilientStock
+
+    client = TestClient(create_app(settings=settings, stock=ResilientStock(repository, settings)))
+    body = client.get(
+        "/v1/availability?productIds=prod-laptop-001&productIds=prod-sold-out&productIds=ghost",
+        headers=auth_header(),
+    ).json()
+    assert body == {
+        "availability": [
+            {"productId": "prod-laptop-001", "quantity": 50, "available": True},
+            {"productId": "prod-sold-out", "quantity": 0, "available": False},
+            {"productId": "ghost", "quantity": 0, "available": False},
+        ],
+        "count": 3,
+    }
 
 
 # --------------------------------------------------------------------------

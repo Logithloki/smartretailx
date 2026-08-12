@@ -7,12 +7,14 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 
 from app.config import Settings
-from app.events import OrderCommandPublisher
 from app.main import create_app
 from app.services import OrderRepository
 
 ORDERS_TABLE = "test-orders"
 IDEMPOTENCY_TABLE = "test-idempotency"
+OUTBOX_TABLE = "test-order-outbox"
+PRODUCTS_TABLE = "test-products"
+PROMOTIONS_TABLE = "test-promotions"
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +70,61 @@ def idempotency_table(aws):
 
 
 @pytest.fixture
+def outbox_table(aws):
+    ddb = boto3.resource("dynamodb", region_name="eu-west-1")
+    return ddb.create_table(
+        TableName=OUTBOX_TABLE,
+        KeySchema=[{"AttributeName": "eventId", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "eventId", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+
+
+@pytest.fixture
+def pricing_tables(aws):
+    ddb = boto3.resource("dynamodb", region_name="eu-west-1")
+    products = ddb.create_table(
+        TableName=PRODUCTS_TABLE,
+        KeySchema=[{"AttributeName": "productId", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "productId", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    promotions = ddb.create_table(
+        TableName=PROMOTIONS_TABLE,
+        KeySchema=[{"AttributeName": "promotionId", "KeyType": "HASH"}],
+        AttributeDefinitions=[
+            {"AttributeName": "promotionId", "AttributeType": "S"},
+            {"AttributeName": "enabled", "AttributeType": "S"},
+            {"AttributeName": "startsAt", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[{
+            "IndexName": "enabled-startsAt-index",
+            "KeySchema": [
+                {"AttributeName": "enabled", "KeyType": "HASH"},
+                {"AttributeName": "startsAt", "KeyType": "RANGE"},
+            ],
+            "Projection": {"ProjectionType": "ALL"},
+        }],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    from decimal import Decimal
+
+    for product_id, name, price, category in (
+        ("prod-laptop-001", "Laptop", "19.99", "electronics"),
+        ("a", "A", "0.10", "electronics"),
+        ("b", "B", "0.20", "electronics"),
+    ):
+        products.put_item(Item={
+            "productId": product_id,
+            "productName": name,
+            "price": Decimal(price),
+            "category": category,
+            "active": True,
+        })
+    return products, promotions
+
+
+@pytest.fixture
 def orders_queue(aws):
     sqs = boto3.client("sqs", region_name="eu-west-1")
     return sqs.create_queue(QueueName="test-orders-queue")["QueueUrl"]
@@ -80,12 +137,17 @@ def order_events_queue(aws):
 
 
 @pytest.fixture
-def settings(orders_table, idempotency_table, orders_queue, order_events_queue) -> Settings:
+def settings(
+    orders_table, idempotency_table, outbox_table, pricing_tables, orders_queue, order_events_queue
+) -> Settings:
     return Settings(
         env="local",
         app_region="eu-west-1",
         orders_table_name=ORDERS_TABLE,
         idempotency_table_name=IDEMPOTENCY_TABLE,
+        order_outbox_table_name=OUTBOX_TABLE,
+        products_table_name=PRODUCTS_TABLE,
+        promotions_table_name=PROMOTIONS_TABLE,
         orders_queue_url=orders_queue,
         order_events_queue_url=order_events_queue,
         _env_file=None,
@@ -98,13 +160,8 @@ def repository(settings) -> OrderRepository:
 
 
 @pytest.fixture
-def publisher(settings) -> OrderCommandPublisher:
-    return OrderCommandPublisher(settings)
-
-
-@pytest.fixture
-def client(settings, repository, publisher) -> TestClient:
-    return TestClient(create_app(settings=settings, repository=repository, publisher=publisher))
+def client(settings, repository) -> TestClient:
+    return TestClient(create_app(settings=settings, repository=repository))
 
 
 def auth_header(sub: str = "user-1", *groups: str) -> dict:

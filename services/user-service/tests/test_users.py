@@ -58,6 +58,13 @@ def test_health_is_public_and_reports_env():
     assert response.json()["service"] == "user-service"
 
 
+def test_openapi_contract_exposes_canonical_user_routes():
+    paths = client().get("/openapi.json").json()["paths"]
+    assert "/v1/users" in paths
+    assert "/v1/users/me" in paths
+    assert all(not path.startswith("/api/") for path in paths)
+
+
 # --------------------------------------------------------------------------
 # /v1/users/me
 # --------------------------------------------------------------------------
@@ -127,6 +134,40 @@ def test_admin_may_read_any_profile():
 def test_missing_user_is_404_for_admin():
     response = client().get("/v1/users/nobody@example.com", headers=token_for("admin"))
     assert response.status_code == 404
+
+
+def test_admin_can_delete_another_user_but_not_self():
+    admin = token_for("admin", username="admin@example.com")
+    assert client().delete("/v1/users/customer@example.com", headers=admin).status_code == 204
+    assert client().delete("/v1/users/admin@example.com", headers=admin).status_code == 400
+
+
+def test_admin_self_delete_is_rejected_for_different_case_and_whitespace():
+    admin = token_for("admin", username="Admin@Example.com")
+    assert client().delete("/v1/users/admin@example.com", headers=admin).status_code == 400
+    assert client().delete("/v1/users/%20admin@example.com%20", headers=admin).status_code == 400
+
+
+def test_cognito_delete_failure_does_not_remove_the_user(monkeypatch):
+    from app.main import create_app
+
+    repository = InMemoryUserRepository()
+
+    def fail_delete(username):
+        raise RuntimeError("cognito unavailable")
+
+    monkeypatch.setattr(repository, "delete_user", fail_delete)
+    app = create_app(settings=local_settings(), repository=repository)
+    response = TestClient(app, raise_server_exceptions=False).delete(
+        "/v1/users/customer@example.com", headers=token_for("admin")
+    )
+    assert response.status_code == 500
+    assert repository.get_user("customer@example.com").username == "customer@example.com"
+
+
+def test_customer_cannot_delete_users():
+    response = client().delete("/v1/users/admin@example.com", headers=token_for("customer"))
+    assert response.status_code == 403
 
 
 # --------------------------------------------------------------------------

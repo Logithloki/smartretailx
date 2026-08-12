@@ -10,8 +10,42 @@ variable "project_name" {
   default     = "smartretailx"
 }
 
+variable "environment_name" {
+  description = "Logical environment. The existing shared stack remains baseline; new isolated roots use sandbox/development/test/staging/production."
+  type        = string
+  default     = "baseline"
+
+  validation {
+    condition = contains(
+      ["baseline", "sandbox", "development", "test", "staging", "production"],
+      var.environment_name,
+    )
+    error_message = "environment_name must be baseline, sandbox, development, test, staging, or production."
+  }
+}
+
+variable "enable_cognito_auto_confirm" {
+  description = "Attach the pre-sign-up auto-confirm hook. Never permitted in staging or production."
+  type        = bool
+  default     = false
+
+  validation {
+    condition = !var.enable_cognito_auto_confirm || contains(
+      ["sandbox", "development", "test"],
+      var.environment_name,
+    )
+    error_message = "Cognito auto-confirm may be enabled only in sandbox, development, or test."
+  }
+}
+
 variable "live" {
   description = "true = full billable stack; false = parked (~GBP 0). Gates NAT, ALB, and (later) ECS desired counts."
+  type        = bool
+  default     = false
+}
+
+variable "enable_grafana" {
+  description = "Run the optional Grafana ECS service and ALB attachments when the stack is live."
   type        = bool
   default     = false
 }
@@ -67,9 +101,22 @@ variable "cors_allow_origins" {
 }
 
 variable "image_tag" {
-  description = "Container image tag the task definitions point at. ECR tags are IMMUTABLE, so bump this default in the SAME commit as the buildx push - never rely on passing -var at apply time."
+  description = "Legacy baseline fallback tag. Formal releases set service_image_digests and deploy repository@sha256 identities."
   type        = string
   default     = "v0.2.0"
+}
+
+variable "service_image_digests" {
+  description = "Immutable ECR digests keyed by order, inventory, user, and product. Empty entries retain the preserved baseline tag until its first promoted release."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for digest in values(var.service_image_digests) : can(regex("^sha256:[0-9a-f]{64}$", digest))
+    ])
+    error_message = "Every service image digest must be an exact sha256:<64 lowercase hex> value."
+  }
 }
 
 # Why the default matters more than it looks: `make park` runs
@@ -104,7 +151,7 @@ variable "github_repo" {
 }
 
 variable "service_desired_count" {
-  description = "Tasks per service when live. Stays 0 until Week 2 pushes real images to ECR - a live service pointing at an absent image churns failed pulls and trips the deployment circuit breaker. Guide correction GC-2, see docs/guide-corrections.md."
+  description = "Baseline tasks per application service when live. The live gate and autoscaling floor still force 0 while parked; environment profiles may override this value."
   type        = number
-  default     = 0
+  default     = 1
 }

@@ -1,9 +1,10 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Trend, Rate } from 'k6/metrics';
-import { BASE_URL, getHeaders, checkResponse } from './config.js';
+import { BASE_URL, getHeaders, productsFrom, validateConfig } from './config.js';
 
 export const options = {
+  summaryTrendStats: ['min', 'med', 'avg', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],
   stages: [
     { duration: '2m', target: 50 }, // Ramp up to 50 VUs
     { duration: '10m', target: 50 }, // Hold at 50 VUs for 10m
@@ -21,6 +22,10 @@ export const options = {
   },
 };
 
+export function setup() {
+  return validateConfig();
+}
+
 const productListDuration = new Trend('product_list_duration');
 const productDetailDuration = new Trend('product_detail_duration');
 const errorRate = new Rate('errors');
@@ -30,7 +35,7 @@ export default function () {
   
   if (rand < 0.7) {
     // 70% traffic to product list
-    const res = http.get(`${BASE_URL}/api/v1/products`, { headers: getHeaders(), tags: { name: 'ProductsList' } });
+    const res = http.get(`${BASE_URL}/v1/products`, { headers: getHeaders(), tags: { name: 'ProductsList' } });
     productListDuration.add(res.timings.duration);
     const success = check(res, { 'status is 200': (r) => r.status === 200 });
     errorRate.add(!success);
@@ -38,18 +43,13 @@ export default function () {
   } else {
     // 30% traffic to product detail, simulating realistic navigation
     // Typically you'd fetch list then pick an ID, but for load testing we can just pick a known ID or fetch list first
-    const listRes = http.get(`${BASE_URL}/api/v1/products`, { headers: getHeaders(), tags: { name: 'ProductsListForDetail' } });
+    const listRes = http.get(`${BASE_URL}/v1/products`, { headers: getHeaders(), tags: { name: 'ProductsListForDetail' } });
     if (listRes.status === 200) {
-      let products;
-      try {
-        products = JSON.parse(listRes.body);
-      } catch (e) {
-        products = [];
-      }
+      const products = productsFrom(listRes);
       
       if (products && products.length > 0) {
         const product = products[Math.floor(Math.random() * products.length)];
-        const res = http.get(`${BASE_URL}/api/v1/products/${product.id}`, { headers: getHeaders(), tags: { name: 'ProductDetail' } });
+        const res = http.get(`${BASE_URL}/v1/products/${product.productId}`, { headers: getHeaders(), tags: { name: 'ProductDetail' } });
         productDetailDuration.add(res.timings.duration);
         const success = check(res, { 'status is 200': (r) => r.status === 200 });
         errorRate.add(!success);

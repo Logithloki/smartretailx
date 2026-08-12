@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -29,6 +32,13 @@ def test_health_is_public(client):
     assert client.get("/health").status_code == 200
 
 
+def test_openapi_contract_exposes_canonical_product_routes(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/v1/products" in paths
+    assert "/v1/products/{product_id}" in paths
+    assert all(not path.startswith("/api/") for path in paths)
+
+
 def test_list_products(client):
     response = client.get("/v1/products", headers=CUSTOMER)
     assert response.status_code == 200
@@ -44,6 +54,98 @@ def test_get_one_product(client):
     response = client.get("/v1/products/prod-laptop-001", headers=CUSTOMER)
     assert response.status_code == 200
     assert response.json()["price"] == "1299.99"
+
+
+def test_active_product_promotion_returns_effective_price(client, promotions_table):
+    now = datetime.now(UTC)
+    promotions_table.put_item(Item={
+        "promotionId": "promo-laptop-10",
+        "name": "Laptop launch offer",
+        "discountPercent": Decimal("10"),
+        "scope": "PRODUCT",
+        "productIds": ["prod-laptop-001"],
+        "enabled": "true",
+        "startsAt": (now - timedelta(minutes=1)).isoformat(),
+        "endsAt": (now + timedelta(minutes=1)).isoformat(),
+    })
+
+    body = client.get("/v1/products/prod-laptop-001", headers=CUSTOMER).json()
+    assert body["basePrice"] == "1299.99"
+    assert body["effectivePrice"] == "1169.99"
+    assert body["promotion"]["promotionId"] == "promo-laptop-10"
+
+
+# --------------------------------------------------------------------------
+# promotions: Product Service owns writes; request-time pricing remains truth
+# --------------------------------------------------------------------------
+
+def new_promotion(promotion_id: str = "promo-home-10", **overrides) -> dict:
+    now = datetime.now(UTC)
+    payload = {
+        "promotionId": promotion_id,
+        "name": "Home launch offer",
+        "discountPercent": "10",
+        "scope": "PRODUCT",
+        "productIds": ["prod-laptop-001"],
+        "startsAt": (now + timedelta(minutes=5)).isoformat(),
+        "endsAt": (now + timedelta(hours=1)).isoformat(),
+        "enabled": True,
+    }
+    return payload | overrides
+
+
+def test_only_admin_can_create_a_promotion(client):
+    assert client.post("/v1/promotions", json=new_promotion(), headers=CUSTOMER).status_code == 403
+    response = client.post("/v1/promotions", json=new_promotion(), headers=ADMIN)
+    assert response.status_code == 201
+    assert response.json()["lifecycleState"] == "SCHEDULED"
+
+
+def test_promotion_crud_is_validated_and_admin_only(client):
+    created = client.post("/v1/promotions", json=new_promotion(), headers=ADMIN)
+    assert created.status_code == 201
+
+    read = client.get("/v1/promotions", headers=ADMIN)
+    assert read.status_code == 200
+    assert read.json()["count"] == 1
+
+    assert client.put(
+        "/v1/promotions/promo-home-10", json={"discountPercent": "15"}, headers=CUSTOMER
+    ).status_code == 403
+    updated = client.put(
+        "/v1/promotions/promo-home-10", json={"discountPercent": "15"}, headers=ADMIN
+    )
+    assert updated.status_code == 200
+    assert updated.json()["discountPercent"] == "15.00"
+
+
+def test_lifecycle_reconcile_is_multi_task_safe(repository):
+    now = datetime.now(UTC)
+    repository.create_promotion_from_payload(new_promotion(
+        "promo-race", startsAt=(now - timedelta(seconds=1)).isoformat(),
+        endsAt=(now + timedelta(hours=1)).isoformat(),
+    ), now=now - timedelta(minutes=1))
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: repository.reconcile_promotions(now), range(4)))
+
+    assert sum(result.transitions for result in results) == 1
+    promotion = repository.get_promotion("promo-race")
+    assert promotion["lifecycleState"] == "ACTIVE"
+    assert promotion["lifecycleVersion"] == 1
+
+
+def test_authoritative_price_respects_the_half_open_time_boundary(client, promotions_table):
+    now = datetime.now(UTC)
+    promotions_table.put_item(Item={
+        "promotionId": "promo-boundary", "name": "Boundary", "discountPercent": Decimal("10"),
+        "scope": "PRODUCT", "productIds": ["prod-laptop-001"], "enabled": "true",
+        "lifecycleState": "SCHEDULED", "startsAt": (now + timedelta(minutes=5)).isoformat(),
+        "endsAt": (now + timedelta(hours=1)).isoformat(),
+    })
+
+    product = client.get("/v1/products/prod-laptop-001", headers=CUSTOMER).json()
+    assert product["effectivePrice"] == "1299.99"
 
 
 def test_unknown_product_is_404(client):
@@ -115,6 +217,47 @@ def test_write_invalidates_this_tasks_cache_immediately(client):
     response = client.get("/v1/products/prod-mouse-002", headers=CUSTOMER)
     assert response.headers["X-Cache"] == "MISS"
     assert response.json()["price"] == "59.99"
+
+
+def test_price_update_marks_one_public_refresh_then_clears_it(repository):
+    calls: list[dict] = []
+    original = repository.table.update_item
+
+    def recording_update(**kwargs):
+        calls.append(kwargs)
+        return original(**kwargs)
+
+    repository.table.update_item = recording_update
+
+    updated = repository.update("prod-mouse-002", {"price": "58.00"})
+
+    assert updated.price == Decimal("58.00")
+    assert len(calls) == 2
+    assert ":pending" in calls[0]["ExpressionAttributeValues"]
+    assert calls[0]["ExpressionAttributeValues"][":pending"] == "true"
+    assert "priceEventVersion" in calls[0]["UpdateExpression"]
+    assert calls[1]["ExpressionAttributeValues"][":cleared"] == "false"
+    stored = repository.table.get_item(Key={"productId": "prod-mouse-002"})["Item"]
+    assert stored["priceEventPending"] == "false"
+    assert stored["priceEventVersion"] == 1
+
+
+def test_non_price_update_does_not_create_a_price_refresh_marker(repository):
+    calls: list[dict] = []
+    original = repository.table.update_item
+
+    def recording_update(**kwargs):
+        calls.append(kwargs)
+        return original(**kwargs)
+
+    repository.table.update_item = recording_update
+
+    repository.update("prod-mouse-002", {"description": "Quiet wireless mouse"})
+
+    assert len(calls) == 1
+    assert "priceEventPending" not in calls[0]["UpdateExpression"]
+    stored = repository.table.get_item(Key={"productId": "prod-mouse-002"})["Item"]
+    assert "priceEventVersion" not in stored
 
 
 def test_delete_invalidates_the_cache(client):

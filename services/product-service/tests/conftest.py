@@ -12,6 +12,7 @@ from app.main import create_app
 from app.services import ProductRepository
 
 PRODUCTS_TABLE = "test-products"
+PROMOTIONS_TABLE = "test-promotions"
 
 
 @pytest.fixture(autouse=True)
@@ -60,11 +61,35 @@ def products_table(aws):
 
 
 @pytest.fixture
-def settings(products_table) -> Settings:
+def promotions_table(aws):
+    ddb = boto3.resource("dynamodb", region_name="eu-west-1")
+    return ddb.create_table(
+        TableName=PROMOTIONS_TABLE,
+        KeySchema=[{"AttributeName": "promotionId", "KeyType": "HASH"}],
+        AttributeDefinitions=[
+            {"AttributeName": "promotionId", "AttributeType": "S"},
+            {"AttributeName": "enabled", "AttributeType": "S"},
+            {"AttributeName": "startsAt", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[{
+            "IndexName": "enabled-startsAt-index",
+            "KeySchema": [
+                {"AttributeName": "enabled", "KeyType": "HASH"},
+                {"AttributeName": "startsAt", "KeyType": "RANGE"},
+            ],
+            "Projection": {"ProjectionType": "ALL"},
+        }],
+        BillingMode="PAY_PER_REQUEST",
+    )
+
+
+@pytest.fixture
+def settings(products_table, promotions_table) -> Settings:
     return Settings(
         env="local",
         app_region="eu-west-1",
         products_table_name=PRODUCTS_TABLE,
+        promotions_table_name=PROMOTIONS_TABLE,
         cache_ttl_seconds=30,
         _env_file=None,
     )

@@ -30,6 +30,14 @@ awslocal dynamodb create-table \
   --region eu-west-1
 
 awslocal dynamodb create-table \
+  --table-name smartretailx-promotions \
+  --attribute-definitions AttributeName=promotionId,AttributeType=S AttributeName=enabled,AttributeType=S AttributeName=startsAt,AttributeType=S \
+  --key-schema AttributeName=promotionId,KeyType=HASH \
+  --global-secondary-indexes 'IndexName=enabled-startsAt-index,KeySchema=[{AttributeName=enabled,KeyType=HASH},{AttributeName=startsAt,KeyType=RANGE}],Projection={ProjectionType=ALL}' \
+  --billing-mode PAY_PER_REQUEST \
+  --region eu-west-1
+
+awslocal dynamodb create-table \
   --table-name smartretailx-idempotency \
   --attribute-definitions AttributeName=id,AttributeType=S \
   --key-schema AttributeName=id,KeyType=HASH \
@@ -37,9 +45,21 @@ awslocal dynamodb create-table \
   --region eu-west-1
 
 awslocal dynamodb create-table \
+  --table-name smartretailx-order-outbox \
+  --attribute-definitions AttributeName=eventId,AttributeType=S \
+  --key-schema AttributeName=eventId,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --stream-specification StreamEnabled=true,StreamViewType=NEW_IMAGE \
+  --region eu-west-1
+
+awslocal dynamodb create-table \
   --table-name smartretailx-websocket-connections \
-  --attribute-definitions AttributeName=connectionId,AttributeType=S \
+  --attribute-definitions \
+      AttributeName=connectionId,AttributeType=S \
+      AttributeName=userId,AttributeType=S \
   --key-schema AttributeName=connectionId,KeyType=HASH \
+  --global-secondary-indexes \
+      'IndexName=userId-index,KeySchema=[{AttributeName=userId,KeyType=HASH}],Projection={ProjectionType=KEYS_ONLY}' \
   --billing-mode PAY_PER_REQUEST \
   --region eu-west-1
 

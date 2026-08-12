@@ -1,0 +1,107 @@
+name: reusable-container-build
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        required: true
+        type: string
+      role_arn:
+        required: true
+        type: string
+      project_name:
+        required: false
+        type: string
+        default: smartretailx
+    outputs:
+      digest:
+        value: ${{ jobs.build.outputs.digest }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.resolve.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role_arn }}
+          aws-region: eu-west-1
+      - id: login
+        uses: aws-actions/amazon-ecr-login@v2
+      - id: identity
+        name: Derive the Terraform-owned repository identity
+        shell: bash
+        run: |
+          repository="${{ inputs.project_name }}/${{ inputs.service }}-service"
+          image="${{ steps.login.outputs.registry }}/${repository}"
+          echo "repository=${repository}" >> "$GITHUB_OUTPUT"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+      - id: existing
+        name: Reuse an existing immutable SHA artifact on rerun
+        shell: bash
+        run: |
+          digest=$(aws ecr describe-images \
+            --repository-name '${{ steps.identity.outputs.repository }}' \
+            --image-ids imageTag='${{ github.sha }}' \
+            --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)
+          if [[ "$digest" == sha256:* ]]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build and push one ARM64 artifact
+        if: steps.existing.outputs.found != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: services
+          file: services/${{ inputs.service }}-service/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.identity.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ inputs.service }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.service }}
+      - id: resolve
+        name: Resolve and verify immutable deployment digest
+        shell: bash
+        run: |
+          digest=$(aws ecr describe-images \
+            --repository-name '${{ steps.identity.outputs.repository }}' \
+            --image-ids imageTag='${{ github.sha }}' \
+            --query 'imageDetails[0].imageDigest' --output text)
+          [[ "$digest" == sha256:* ]] || { echo "ECR digest was not resolved"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          printf '%s@%s\n' '${{ steps.identity.outputs.image }}' "$digest" > image-reference.txt
+      - name: Scan the exact digest
+        # Official Aqua remediation identifies 0.35.0 as an immutable safe release.
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          image-ref: ${{ steps.identity.outputs.image }}@${{ steps.resolve.outputs.digest }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          version: v0.69.3
+      - name: Generate CycloneDX SBOM for the exact digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          image-ref: ${{ steps.identity.outputs.image }}@${{ steps.resolve.outputs.digest }}
+          format: cyclonedx
+          output: sbom-${{ inputs.service }}.cdx.json
+          version: v0.69.3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ inputs.service }}
+          path: |
+            image-reference.txt
+            sbom-${{ inputs.service }}.cdx.json

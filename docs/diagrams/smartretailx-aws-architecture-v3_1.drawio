@@ -46,7 +46,7 @@
         <mxCell id="cf" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;fillColor=#8C4FFF;strokeColor=#ffffff;" vertex="1" parent="edge_band">
           <mxGeometry x="380" y="44" width="54" height="54" as="geometry"/>
         </mxCell>
-        <mxCell id="cf_l" value="CloudFront + WAF&lt;br&gt;dual origin:&lt;br&gt;S3 + /api/*" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="edge_band">
+        <mxCell id="cf_l" value="CloudFront + WAF&lt;br&gt;dual origin:&lt;br&gt;S3 + /v1/*" style="text;html=1;align=center;fontSize=10;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="edge_band">
           <mxGeometry x="342" y="102" width="130" height="54" as="geometry"/>
         </mxCell>
         <mxCell id="cog" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;fillColor=#BF0816;strokeColor=#ffffff;" vertex="1" parent="edge_band">
@@ -77,7 +77,7 @@
           <mxGeometry x="1300" y="52" width="190" height="70" as="geometry"/>
         </mxCell>
         <!-- edge band internal edges -->
-        <mxCell id="eb3" value="③ /api/*" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;fontStyle=1;strokeColor=#1a73e8;strokeWidth=2;html=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;fontColor=#1a73e8;" edge="1" parent="edge_band" source="cf" target="apigw">
+        <mxCell id="eb3" value="③ /v1/*" style="edgeStyle=orthogonalEdgeStyle;fontSize=9;fontStyle=1;strokeColor=#1a73e8;strokeWidth=2;html=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;fontColor=#1a73e8;" edge="1" parent="edge_band" source="cf" target="apigw">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="470" y="71"/>
@@ -475,7 +475,7 @@
           <mxGeometry x="1740" y="90" width="540" height="160" as="geometry"/>
         </mxCell>
 
-        <mxCell id="lifecycle" value="&lt;b&gt;REQUEST LIFECYCLE ①–⑩&lt;/b&gt;&lt;br&gt;① Login via Cognito (OAuth2 + PKCE) → JWT — out-of-band&lt;br&gt;② SPA → CloudFront over HTTPS with Bearer JWT (WAF inspects)&lt;br&gt;③ CloudFront routes /api/* → HTTP API · static → S3 (OAC)&lt;br&gt;④ JWT authoriser validates via JWKS · RBAC via groups claim&lt;br&gt;⑤ VPC Link → internal ALB → path-routed to service&lt;br&gt;⑥ Order: Pydantic · idempotency · DDB write · SQS publish&lt;br&gt;⑦ Inventory consumes → Aurora txn → confirm / reject → compensate&lt;br&gt;⑧ DDB Streams → EventBridge Pipes → Bus (zero glue code)&lt;br&gt;⑨ Rules → Notification λ → SES · WS-push λ → WebSocket → client&lt;br&gt;⑩ Every hop: OTel → X-Ray · logs → CloudWatch → Grafana" style="text;html=1;strokeColor=#0066cc;fillColor=#f5faff;rounded=1;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="1">
+        <mxCell id="lifecycle" value="&lt;b&gt;REQUEST LIFECYCLE ①–⑩&lt;/b&gt;&lt;br&gt;① Login via Cognito Hosted UI (OAuth2 code + PKCE) → JWT&lt;br&gt;② SPA runtime config → CloudFront over HTTPS with Bearer JWT&lt;br&gt;③ CloudFront routes /v1/* → HTTP API · static → versioned S3 release&lt;br&gt;④ JWT authoriser validates via JWKS · RBAC via cognito:groups&lt;br&gt;⑤ VPC Link → internal ALB → path-routed service&lt;br&gt;⑥ Order: idempotency + atomic DDB order/outbox transaction&lt;br&gt;⑦ Stream publisher → SQS; Inventory inbox/outbox + Aurora transaction&lt;br&gt;⑧ Outcome SNS → compensation; DDB Streams → Pipes → EventBridge&lt;br&gt;⑨ Notification λ + user-scoped WebSocket push&lt;br&gt;⑩ Correlation + OTel → ADOT/X-Ray; logs/alarms → CloudWatch" style="text;html=1;strokeColor=#0066cc;fillColor=#f5faff;rounded=1;fontSize=10;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;fontColor=#1a1a2e;" vertex="1" parent="1">
           <mxGeometry x="1740" y="270" width="540" height="250" as="geometry"/>
         </mxCell>
 

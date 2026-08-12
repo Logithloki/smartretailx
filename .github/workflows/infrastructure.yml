@@ -1,0 +1,47 @@
+name: Infrastructure plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [development, test, staging, production]
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: smartretailx-infrastructure-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Plan only; apply requires the separately reviewed saved plan flow
+        working-directory: infra
+        run: |
+          terraform init -reconfigure -backend-config="environments/${{ inputs.environment }}/backend.hcl"
+          terraform plan -var-file="environments/${{ inputs.environment }}/terraform.tfvars.json" -detailed-exitcode -out=tfplan || code=$?
+          if [ "${code:-0}" -eq 1 ]; then exit 1; fi
+          terraform show -json tfplan > tfplan.json
+          jq '{create:([.resource_changes[]? | select(.change.actions == ["create"])]|length),update:([.resource_changes[]? | select(.change.actions == ["update"])]|length),delete:([.resource_changes[]? | select(.change.actions | index("delete"))]|length)}' tfplan.json > plan-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ inputs.environment }}
+          path: |
+            infra/tfplan
+            infra/tfplan.json
+            infra/plan-summary.json
+          retention-days: 7

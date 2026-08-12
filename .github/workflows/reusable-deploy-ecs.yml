@@ -1,0 +1,135 @@
+name: reusable-deploy-ecs
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        required: true
+        type: string
+      image_digest:
+        required: true
+        type: string
+      role_arn:
+        required: true
+        type: string
+      environment_name:
+        required: true
+        type: string
+      cluster_name:
+        required: true
+        type: string
+      project_name:
+        required: false
+        type: string
+        default: smartretailx
+      run_migration:
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      task_definition:
+        value: ${{ jobs.deploy.outputs.task_definition }}
+      rollback_target:
+        value: ${{ jobs.deploy.outputs.rollback_target }}
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: smartretailx-${{ inputs.environment_name }}-${{ inputs.service }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment: ${{ inputs.environment_name }}
+    runs-on: ubuntu-latest
+    outputs:
+      task_definition: ${{ steps.deploy.outputs.task_definition }}
+      rollback_target: ${{ steps.current.outputs.task_definition }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role_arn }}
+          aws-region: eu-west-1
+      - id: current
+        name: Record previous known-good revision
+        shell: bash
+        run: |
+          service_name="${{ inputs.project_name }}-${{ inputs.service }}-service"
+          current=$(aws ecs describe-services --cluster '${{ inputs.cluster_name }}' \
+            --services "$service_name" --query 'services[0].taskDefinition' --output text)
+          [[ "$current" == arn:* ]] || { echo "Current task definition not found"; exit 1; }
+          echo "task_definition=$current" >> "$GITHUB_OUTPUT"
+      - name: Render an exact digest task definition revision
+        shell: bash
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition '${{ steps.current.outputs.task_definition }}' \
+            --query taskDefinition > current-task-definition.json
+          account=$(aws sts get-caller-identity --query Account --output text)
+          image="$account.dkr.ecr.eu-west-1.amazonaws.com/${{ inputs.project_name }}/${{ inputs.service }}-service@${{ inputs.image_digest }}"
+          jq --arg container '${{ inputs.service }}-service' --arg image "$image" '
+            del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)
+            | .containerDefinitions |= map(if .name == $container then .image = $image else . end)
+          ' current-task-definition.json > rendered-task-definition.json
+          test "$(jq --arg c '${{ inputs.service }}-service' '[.containerDefinitions[] | select(.name == $c)] | length' rendered-task-definition.json)" -eq 1
+      - id: deploy
+        name: Register exact revision
+        shell: bash
+        run: |
+          revision=$(aws ecs register-task-definition \
+            --cli-input-json file://rendered-task-definition.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "task_definition=$revision" >> "$GITHUB_OUTPUT"
+      - name: Run backward-compatible Alembic migration before rollout
+        if: inputs.run_migration
+        shell: bash
+        run: |
+          service='${{ inputs.project_name }}-${{ inputs.service }}-service'
+          network=$(aws ecs describe-services --cluster '${{ inputs.cluster_name }}' \
+            --services "$service" --query 'services[0].networkConfiguration' --output json)
+          overrides=$(jq -nc --arg name '${{ inputs.service }}-service' \
+            '{containerOverrides:[{name:$name,command:["alembic","upgrade","head"]}]}')
+          task=$(aws ecs run-task --cluster '${{ inputs.cluster_name }}' \
+            --task-definition '${{ steps.deploy.outputs.task_definition }}' \
+            --launch-type FARGATE --network-configuration "$network" \
+            --overrides "$overrides" --query 'tasks[0].taskArn' --output text)
+          [[ "$task" == arn:* ]] || { echo "Migration task did not start"; exit 1; }
+          aws ecs wait tasks-stopped --cluster '${{ inputs.cluster_name }}' --tasks "$task"
+          result=$(aws ecs describe-tasks --cluster '${{ inputs.cluster_name }}' --tasks "$task" \
+            --query 'tasks[0].containers[?name==`${{ inputs.service }}-service`][0].{exitCode:exitCode,reason:reason}' --output json)
+          test "$(jq -r .exitCode <<<"$result")" -eq 0 || { echo "$result"; exit 1; }
+      - name: Update service to the registered revision
+        shell: bash
+        run: |
+          aws ecs update-service --cluster '${{ inputs.cluster_name }}' \
+            --service '${{ inputs.project_name }}-${{ inputs.service }}-service' \
+            --task-definition '${{ steps.deploy.outputs.task_definition }}' >/dev/null
+      - name: Wait for stable state and detect circuit-breaker rollback
+        shell: bash
+        run: |
+          aws ecs wait services-stable --cluster '${{ inputs.cluster_name }}' \
+            --services '${{ inputs.project_name }}-${{ inputs.service }}-service'
+          primary=$(aws ecs describe-services --cluster '${{ inputs.cluster_name }}' \
+            --services '${{ inputs.project_name }}-${{ inputs.service }}-service' \
+            --query 'services[0].deployments[?status==`PRIMARY`][0]' --output json)
+          test "$(jq -r .taskDefinition <<<"$primary")" = '${{ steps.deploy.outputs.task_definition }}'
+          test "$(jq -r .rolloutState <<<"$primary")" = COMPLETED
+          running=$(jq -r .runningCount <<<"$primary")
+          desired=$(jq -r .desiredCount <<<"$primary")
+          test "$running" -eq "$desired"
+          alarms=$(aws cloudwatch describe-alarms \
+            --alarm-name-prefix '${{ inputs.project_name }}-${{ inputs.service }}' \
+            --state-value ALARM --query 'length(MetricAlarms)' --output text)
+          test "$alarms" -eq 0
+      - name: Capture deployment diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          aws ecs describe-services --cluster '${{ inputs.cluster_name }}' \
+            --services '${{ inputs.project_name }}-${{ inputs.service }}-service' \
+            --query 'services[0].{deployments:deployments,events:events[0:10]}' --output json
+          aws ecs list-tasks --cluster '${{ inputs.cluster_name }}' \
+            --service-name '${{ inputs.project_name }}-${{ inputs.service }}-service' \
+            --desired-status STOPPED --max-items 10 --output json

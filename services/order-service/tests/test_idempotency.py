@@ -13,8 +13,8 @@ from app.idempotency import (
 from conftest import auth_header
 
 
-def _payload(quantity: int = 2, price: str = "19.99") -> dict:
-    return {"items": [{"productId": "prod-laptop-001", "quantity": quantity, "unitPrice": price}]}
+def _payload(quantity: int = 2) -> dict:
+    return {"items": [{"productId": "prod-laptop-001", "quantity": quantity}]}
 
 
 def _key(value: str = "key-abc-123") -> dict:
@@ -23,6 +23,13 @@ def _key(value: str = "key-abc-123") -> dict:
 
 def _count_orders(settings) -> int:
     table = boto3.resource("dynamodb", region_name="eu-west-1").Table(settings.orders_table_name)
+    return table.scan()["Count"]
+
+
+def _count_outbox_records(settings) -> int:
+    table = boto3.resource("dynamodb", region_name="eu-west-1").Table(
+        settings.order_outbox_table_name
+    )
     return table.scan()["Count"]
 
 
@@ -42,18 +49,13 @@ def test_same_key_and_body_creates_exactly_one_order(client, settings):
     assert _count_orders(settings) == 1
 
 
-def test_replay_publishes_only_one_command(client, settings):
+def test_replay_creates_only_one_outbox_command(client, settings):
     """A duplicate must not reserve stock twice - the whole point."""
     headers = {**auth_header(), **_key()}
     client.post("/v1/orders", json=_payload(), headers=headers)
     client.post("/v1/orders", json=_payload(), headers=headers)
 
-    sqs = boto3.client("sqs", region_name="eu-west-1")
-    attrs = sqs.get_queue_attributes(
-        QueueUrl=settings.orders_queue_url,
-        AttributeNames=["ApproximateNumberOfMessages"],
-    )["Attributes"]
-    assert attrs["ApproximateNumberOfMessages"] == "1"
+    assert _count_outbox_records(settings) == 1
 
 
 def test_requests_without_a_key_are_not_deduplicated(client, settings):
@@ -83,7 +85,7 @@ def test_same_key_with_a_different_body_is_rejected(client, settings):
     assert _count_orders(settings) == 1
 
 
-def test_in_flight_duplicate_gets_409(client, settings, repository, publisher):
+def test_in_flight_duplicate_gets_409(client, settings, repository):
     """Simulates the concurrent case: the key is claimed but not completed."""
     store = IdempotencyStore(settings)
     store.claim("user-1", "key-inflight", fingerprint(_payload()))
@@ -165,19 +167,20 @@ def test_records_carry_a_ttl_so_the_table_self_prunes(settings):
     assert int(item["expiration"]) > 0
 
 
-def test_failed_publish_releases_the_key(client, settings, repository):
-    """If the command cannot be published, the customer's retry with the same
+def test_failed_transaction_releases_the_key(client, settings, repository, monkeypatch):
+    """If the atomic write fails, the customer's retry with the same
     key must be allowed through rather than stuck at 409."""
     from app.main import create_app
 
-    class BrokenPublisher:
-        def publish_order_created(self, order, correlation_id=None):
-            raise RuntimeError("sqs down")
+    def fail_transaction(*_args, **_kwargs):
+        raise RuntimeError("transaction unavailable")
+
+    monkeypatch.setattr(repository, "put_with_command", fail_transaction)
 
     from fastapi.testclient import TestClient
 
     broken_client = TestClient(
-        create_app(settings=settings, repository=repository, publisher=BrokenPublisher()),
+        create_app(settings=settings, repository=repository),
         raise_server_exceptions=False,
     )
     headers = {**auth_header(), **_key("retry-me")}
