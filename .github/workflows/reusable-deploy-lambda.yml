@@ -6,16 +6,10 @@ on:
       component:
         required: true
         type: string
-      function_name:
-        required: true
-        type: string
-      alias_name:
+      function_suffix:
         required: true
         type: string
       release_run_id:
-        required: true
-        type: string
-      role_arn:
         required: true
         type: string
       environment_name:
@@ -40,6 +34,11 @@ jobs:
   deploy:
     environment: ${{ inputs.environment_name }}
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_ROLE_ARN: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      PROJECT_NAME: ${{ vars.SMARTRETAILX_PROJECT_NAME }}
+      FUNCTION_SUFFIX: ${{ inputs.function_suffix }}
+      ALIAS_NAME: ${{ inputs.environment_name }}
     outputs:
       version: ${{ steps.publish.outputs.version }}
       rollback_version: ${{ steps.previous.outputs.version }}
@@ -50,35 +49,44 @@ jobs:
           path: release
           run-id: ${{ inputs.release_run_id }}
           github-token: ${{ github.token }}
+      - name: Validate environment deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for setting in DEPLOY_ROLE_ARN PROJECT_NAME FUNCTION_SUFFIX ALIAS_NAME; do
+            [[ -n "${!setting:-}" ]] || { echo "Missing required deployment setting: $setting"; exit 1; }
+          done
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.role_arn }}
+          role-to-assume: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
           aws-region: eu-west-1
       - id: previous
         shell: bash
         run: |
-          version=$(aws lambda get-alias --function-name '${{ inputs.function_name }}' \
-            --name '${{ inputs.alias_name }}' --query FunctionVersion --output text 2>/dev/null || true)
+          function_name="$PROJECT_NAME-$FUNCTION_SUFFIX"
+          version=$(aws lambda get-alias --function-name "$function_name" \
+            --name "$ALIAS_NAME" --query FunctionVersion --output text 2>/dev/null || true)
           echo "version=${version:-none}" >> "$GITHUB_OUTPUT"
       - id: publish
         name: Publish artifact and move environment alias
         shell: bash
         run: |
           archive="release/lambdas/${{ inputs.component }}.zip"
+          function_name="$PROJECT_NAME-$FUNCTION_SUFFIX"
           expected=$(awk -v file="${{ inputs.component }}.zip" '$2 ~ file {print $1}' release/lambda-checksums.sha256)
           test "$(sha256sum "$archive" | cut -d' ' -f1)" = "$expected"
-          aws lambda update-function-code --function-name '${{ inputs.function_name }}' \
+          aws lambda update-function-code --function-name "$function_name" \
             --zip-file "fileb://$archive" >/dev/null
-          aws lambda wait function-updated --function-name '${{ inputs.function_name }}'
-          version=$(aws lambda publish-version --function-name '${{ inputs.function_name }}' \
+          aws lambda wait function-updated --function-name "$function_name"
+          version=$(aws lambda publish-version --function-name "$function_name" \
             --description "release run ${{ inputs.release_run_id }}" --query Version --output text)
-          if aws lambda get-alias --function-name '${{ inputs.function_name }}' \
-            --name '${{ inputs.alias_name }}' >/dev/null 2>&1; then
-            aws lambda update-alias --function-name '${{ inputs.function_name }}' \
-              --name '${{ inputs.alias_name }}' --function-version "$version" >/dev/null
+          if aws lambda get-alias --function-name "$function_name" \
+            --name "$ALIAS_NAME" >/dev/null 2>&1; then
+            aws lambda update-alias --function-name "$function_name" \
+              --name "$ALIAS_NAME" --function-version "$version" >/dev/null
           else
-            aws lambda create-alias --function-name '${{ inputs.function_name }}' \
-              --name '${{ inputs.alias_name }}' --function-version "$version" >/dev/null
+            aws lambda create-alias --function-name "$function_name" \
+              --name "$ALIAS_NAME" --function-version "$version" >/dev/null
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 

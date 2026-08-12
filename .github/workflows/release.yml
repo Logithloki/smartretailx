@@ -144,9 +144,7 @@ jobs:
     with:
       service: order
       image_digest: ${{ needs.build-order.outputs.digest }}
-      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
       environment_name: development
-      cluster_name: smartretailx-cluster
 
   deploy-baseline-inventory:
     if: vars.BASELINE_AUTO_DEPLOY == 'true'
@@ -155,9 +153,7 @@ jobs:
     with:
       service: inventory
       image_digest: ${{ needs.build-inventory.outputs.digest }}
-      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
       environment_name: development
-      cluster_name: smartretailx-cluster
       run_migration: true
 
   deploy-baseline-product:
@@ -167,9 +163,7 @@ jobs:
     with:
       service: product
       image_digest: ${{ needs.build-product.outputs.digest }}
-      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
       environment_name: development
-      cluster_name: smartretailx-cluster
 
   deploy-baseline-user:
     if: vars.BASELINE_AUTO_DEPLOY == 'true'
@@ -178,6 +172,4 @@ jobs:
     with:
       service: user
       image_digest: ${{ needs.build-user.outputs.digest }}
-      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
       environment_name: development
-      cluster_name: smartretailx-cluster
