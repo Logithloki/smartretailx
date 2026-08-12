@@ -4,10 +4,6 @@ on:
   workflow_call:
     inputs:
       environment_name: { required: true, type: string }
-      api_base_url: { required: true, type: string }
-    secrets:
-      CUSTOMER_TOKEN: { required: true }
-      ADMIN_TOKEN: { required: true }
 
 permissions:
   contents: read
@@ -16,17 +12,18 @@ jobs:
   newman:
     environment: ${{ inputs.environment_name }}
     runs-on: ubuntu-latest
+    env:
+      API_BASE_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      CUSTOMER_TOKEN: ${{ secrets.CUSTOMER_TOKEN }}
+      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Execute authenticated API, RBAC and Saga collection
-        env:
-          CUSTOMER_TOKEN: ${{ secrets.CUSTOMER_TOKEN }}
-          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
           mkdir -p evidence/newman
           npx --yes newman@6.2.1 run postman/SmartRetailX.postman_collection.json \
             -e postman/SmartRetailX.postman_environment.json \
-            --env-var apiBaseUrl='${{ inputs.api_base_url }}' \
+            --env-var apiBaseUrl="$API_BASE_URL" \
             --env-var customerToken="$CUSTOMER_TOKEN" \
             --env-var adminToken="$ADMIN_TOKEN" \
             --reporters cli,junit,json \
