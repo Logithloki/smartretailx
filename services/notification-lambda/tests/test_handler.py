@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
+from datetime import UTC, datetime
 
 import boto3
 import pytest
@@ -79,15 +79,24 @@ def idempotency_table(aws):
 
 
 def domain_event(event_type: str = "order-confirmed", **overrides) -> dict:
-    event = {
-        "eventType": event_type,
+    payload = {
         "orderId": "ord-abc123",
         "userId": "user-1",
         "userEmail": CUSTOMER,
-        "correlationId": "corr-1",
     }
-    event.update(overrides)
-    return event
+    payload.update(overrides)
+    order_id = payload["orderId"]
+    return {
+        "eventType": event_type,
+        "eventVersion": "1.0",
+        "eventId": f"inventory-outcome#{order_id}",
+        "occurredAt": datetime.now(UTC).isoformat(),
+        "correlationId": "corr-1",
+        "aggregateId": order_id,
+        "causationId": f"order-created#{order_id}",
+        "traceId": None,
+        "payload": payload,
+    }
 
 
 def sns_event(event: dict, message_id: str = "msg-1") -> dict:
@@ -210,4 +219,4 @@ def test_handler_handles_a_batch(ses_verified, idempotency_table):
 
 
 def test_unwrap_sns_reads_the_message_body():
-    assert h.unwrap_sns(sns_event(domain_event())["Records"][0])["orderId"] == "ord-abc123"
+    assert h.unwrap_sns(sns_event(domain_event())["Records"][0])["aggregateId"] == "ord-abc123"

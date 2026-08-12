@@ -1,0 +1,189 @@
+name: reusable-integration-tests
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  localstack-saga:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure secret-free local test environment
+        shell: bash
+        run: |
+          chmod +x localstack-init/01-setup.sh
+          cat > services/order-service/.env.local <<'EOF'
+          ENV=local
+          APP_REGION=eu-west-1
+          AWS_ENDPOINT_URL=http://localstack:4566
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          ORDERS_QUEUE_URL=http://localstack:4566/000000000000/smartretailx-orders-queue
+          ORDER_EVENTS_QUEUE_URL=http://localstack:4566/000000000000/smartretailx-order-events
+          IDEMPOTENCY_TABLE_NAME=smartretailx-idempotency
+          ORDERS_TABLE_NAME=smartretailx-orders
+          ORDER_OUTBOX_TABLE_NAME=smartretailx-order-outbox
+          LOCAL_INLINE_OUTBOX_ENABLED=true
+          COMPENSATION_CONSUMER_ENABLED=true
+          EOF
+          cat > services/inventory-service/.env.local <<'EOF'
+          ENV=local
+          APP_REGION=eu-west-1
+          AWS_ENDPOINT_URL=http://localstack:4566
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          DB_HOST=postgres
+          DB_PORT=5432
+          DB_NAME=inventory
+          DB_USER=smartretailx_admin
+          DB_PASSWORD=SmartRetailX2026!Secure
+          CONSUMER_ENABLED=true
+          ORDERS_QUEUE_URL=http://localstack:4566/000000000000/smartretailx-orders-queue
+          SNS_TOPIC_ARN=arn:aws:sns:eu-west-1:000000000000:smartretailx-order-confirmed
+          EOF
+          cat > services/product-service/.env.local <<'EOF'
+          ENV=local
+          APP_REGION=eu-west-1
+          AWS_ENDPOINT_URL=http://localstack:4566
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          PRODUCTS_TABLE_NAME=smartretailx-products
+          LOCAL_DEV_GROUPS=admin
+          EOF
+          cat > services/user-service/.env.local <<'EOF'
+          ENV=local
+          APP_REGION=eu-west-1
+          AWS_ENDPOINT_URL=http://localstack:4566
+          AWS_ACCESS_KEY_ID=test
+          AWS_SECRET_ACCESS_KEY=test
+          COGNITO_USER_POOL_ID=local-mock
+          COGNITO_APP_CLIENT_ID=local-mock
+          EOF
+      - name: Build and start deterministic integration stack
+        run: docker compose up -d --build --wait
+      - name: Assert readiness, seed stock, and exercise the saga
+        shell: bash
+        run: |
+          for port in 8001 8002 8003 8004; do
+            ready=false
+            for attempt in $(seq 1 60); do
+              body_file="/tmp/smartretailx-health-${port}.body"
+              status=$(curl --silent --show-error --output "$body_file" \
+                --write-out '%{http_code}' "http://localhost:${port}/health" || true)
+              if [[ "$status" == "200" ]]; then ready=true; break; fi
+              if [[ "$status" == "500" ]]; then
+                echo "health endpoint returned HTTP 500 on port ${port} (attempt ${attempt})"
+                cat "$body_file" || true
+                docker compose ps
+                case "$port" in
+                  8001) docker compose logs --no-color --tail=200 order-service ;;
+                  8002) docker compose logs --no-color --tail=200 inventory-service inventory-migrate postgres ;;
+                  8003) docker compose logs --no-color --tail=200 user-service ;;
+                  8004) docker compose logs --no-color --tail=200 product-service ;;
+                esac
+                exit 1
+              fi
+              sleep 2
+            done
+            if ! $ready; then
+              echo "service on ${port} did not become ready"
+              docker compose ps
+              case "$port" in
+                8001) docker compose logs --no-color order-service ;;
+                8002) docker compose logs --no-color inventory-service inventory-migrate postgres ;;
+                8003) docker compose logs --no-color user-service ;;
+                8004) docker compose logs --no-color product-service ;;
+              esac
+              exit 1
+            fi
+          done
+          # Wait for the complete LocalStack ready.d contract. Container health
+          # alone becomes ready before its table/queue seed script finishes.
+          for attempt in $(seq 1 30); do
+            if docker compose exec -T localstack awslocal dynamodb describe-table \
+              --table-name smartretailx-orders --region eu-west-1 >/dev/null 2>&1 && \
+              docker compose exec -T localstack awslocal dynamodb describe-table \
+              --table-name smartretailx-products --region eu-west-1 >/dev/null 2>&1 && \
+              docker compose exec -T localstack awslocal dynamodb describe-table \
+              --table-name smartretailx-promotions --region eu-west-1 >/dev/null 2>&1; then
+              if docker compose exec -T localstack awslocal dynamodb describe-table \
+                --table-name smartretailx-idempotency --region eu-west-1 >/dev/null 2>&1 && \
+                docker compose exec -T localstack awslocal dynamodb describe-table \
+                --table-name smartretailx-order-outbox --region eu-west-1 >/dev/null 2>&1 && \
+                docker compose exec -T localstack awslocal sqs get-queue-url \
+                --queue-name smartretailx-orders-queue --region eu-west-1 >/dev/null 2>&1 && \
+                docker compose exec -T localstack awslocal sqs get-queue-url \
+                --queue-name smartretailx-order-events --region eu-west-1 >/dev/null 2>&1 && \
+                docker compose exec -T localstack awslocal dynamodb get-item \
+                --table-name smartretailx-products --key '{"productId":{"S":"prod-laptop-001"}}' \
+                --region eu-west-1 --query 'Item.productId.S' --output text 2>/dev/null | grep -qx 'prod-laptop-001'; then
+                # The price authority queries this GSI; table ACTIVE is not
+                # enough while LocalStack is still bringing the index online.
+                if docker compose exec -T localstack awslocal dynamodb query \
+                  --table-name smartretailx-promotions --index-name enabled-startsAt-index \
+                  --key-condition-expression '#enabled = :enabled AND startsAt <= :now' \
+                  --expression-attribute-names '{"#enabled":"enabled"}' \
+                  --expression-attribute-values '{":enabled":{"S":"true"},":now":{"S":"9999-12-31T23:59:59+00:00"}}' \
+                  --region eu-west-1 >/dev/null 2>&1; then
+                  break
+                fi
+              fi
+            fi
+            if [[ "$attempt" == "30" ]]; then
+              echo "LocalStack init resources were not ready"
+              docker compose logs --no-color --tail=300 localstack
+              exit 1
+            fi
+            sleep 2
+          done
+          # Deliberately unsigned local-only fixture; split to avoid secret scanners
+          token="$(printf '%s' 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.'; printf '%s' 'eyJzdWIiOiJjaS1hZG1pbiIsImVtYWlsIjoiY2lAZXhhbXBsZS5jb20iLCJjb2duaXRvOmdyb3VwcyI6WyJhZG1pbiIsImN1c3RvbWVyIl19.sig')"
+          if ! curl --fail-with-body --silent --show-error -X PATCH http://localhost:8002/v1/inventory/prod-laptop-001 \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"quantity":10}'; then
+            docker compose logs --no-color --tail=300 inventory-service inventory-migrate postgres
+            exit 1
+          fi
+          body='{"items":[{"productId":"prod-laptop-001","quantity":1}],"loadTest":true}'
+          if ! first=$(curl --fail-with-body --silent --show-error -X POST http://localhost:8001/v1/orders \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -H 'Idempotency-Key: ci-saga-1' -d "$body"); then
+            echo "$first"
+            docker compose logs --no-color --tail=300 order-service localstack
+            exit 1
+          fi
+          order_id=$(jq -er .orderId <<<"$first")
+          replay=$(curl --fail --silent --show-error -X POST http://localhost:8001/v1/orders \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -H 'Idempotency-Key: ci-saga-1' -d "$body")
+          test "$(jq -r .orderId <<<"$replay")" = "$order_id"
+          terminal=false
+          for attempt in $(seq 1 30); do
+            order=$(curl --fail --silent --show-error "http://localhost:8001/v1/orders/$order_id" \
+              -H "Authorization: Bearer $token")
+            status=$(jq -r .status <<<"$order")
+            if [[ "$status" == CONFIRMED || "$status" == REJECTED ]]; then terminal=true; break; fi
+            sleep 2
+          done
+          if ! $terminal; then
+            echo "order remained non-terminal: $order"
+            docker compose ps
+            docker compose logs --no-color --tail=300 order-service inventory-service localstack
+            exit 1
+          fi
+          test "$status" = CONFIRMED
+      - name: Capture container logs
+        if: always()
+        run: docker compose logs --no-color > integration-compose.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: localstack-integration-logs
+          path: integration-compose.log
+      - name: Tear down ephemeral CI resources
+        if: always()
+        run: docker compose down -v

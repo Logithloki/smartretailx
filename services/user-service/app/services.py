@@ -56,6 +56,11 @@ class InMemoryUserRepository:
         except KeyError as exc:
             raise UserNotFound(username) from exc
 
+    def delete_user(self, username: str) -> None:
+        if username not in self._users:
+            raise UserNotFound(username)
+        del self._users[username]
+
 
 class CognitoUserRepository:
     """Reads the Terraform-managed user pool via cognito-idp admin APIs.
@@ -124,6 +129,14 @@ class CognitoUserRepository:
                 raise UserNotFound(username) from exc
             raise
         return self._to_profile(raw, self._groups_for(username))
+
+    def delete_user(self, username: str) -> None:
+        try:
+            self.client.admin_delete_user(UserPoolId=self._pool_id, Username=username)
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "UserNotFoundException":
+                raise UserNotFound(username) from exc
+            raise
 
 
 def build_repository(settings):

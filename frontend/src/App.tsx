@@ -1,39 +1,46 @@
-import { Link, Navigate, Route, Routes } from "react-router-dom";
-import { useAuth } from "react-oidc-context";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useAuth } from "./context/useAuth";
 import { ProductsPage } from "./pages/ProductsPage";
 import { CallbackPage } from "./pages/CallbackPage";
 import { PlaceOrderPage } from "./pages/PlaceOrderPage";
+import { CartPage } from "./pages/CartPage";
 import { MyOrdersPage } from "./pages/MyOrdersPage";
 import { AdminProductsPage } from "./pages/AdminProductsPage";
 import { AdminStockPage } from "./pages/AdminStockPage";
+import { AdminUsersPage } from "./pages/AdminUsersPage";
+import { AdminFulfilmentPage } from "./pages/AdminFulfilmentPage";
+import { AdminPromotionsPage } from "./pages/AdminPromotionsPage";
+import { SignInPage } from "./pages/SignInPage";
 import { useIsAdmin } from "./hooks/useIsAdmin";
-
-/*
- * Route map (backlog items 27-30 + lecturer ruling H.2):
- *
- *   /                    -> redirect to /products
- *   /products            (public read) list products
- *   /orders/new          (customer)    place an order
- *   /orders              (customer)    my orders + live WS status
- *   /admin/products      (admin)       products CRUD
- *   /admin/stock         (admin)       stock view/adjust
- *   /callback            OIDC redirect handler
- *
- * ProtectedRoute enforces authentication. AdminRoute enforces admin
- * group membership on top. Both are UI-only conveniences - every
- * admin endpoint independently checks cognito:groups server-side, so
- * a bypass on the SPA gate is meaningless.
- */
+import { createCognitoLogoutUrl } from "./auth-config";
+import { getRuntimeConfig } from "./config/runtime-config";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
 
-  if (auth.isLoading) return <p>Loading auth session...</p>;
-  if (auth.error) return <p>Auth error: {auth.error.message}</p>;
+  if (auth.isLoading) {
+    return (
+      <div className="loading-screen">
+        <div className="spinner"></div>
+        <p>Verifying authentication session...</p>
+      </div>
+    );
+  }
+
+  if (auth.error) {
+    return (
+      <div className="empty-state">
+        <div className="alert-error">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Auth session error: {auth.error.message}
+        </div>
+        <button onClick={() => void auth.signinRedirect()}>Re-authenticate</button>
+      </div>
+    );
+  }
 
   if (!auth.isAuthenticated) {
-    auth.signinRedirect();
-    return <p>Redirecting to sign-in...</p>;
+    return <SignInPage />;
   }
 
   return <>{children}</>;
@@ -46,10 +53,13 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
       {isAdmin ? (
         children
       ) : (
-        <p className="error">
-          This page is restricted to administrators. Contact support if
-          you believe you should have access.
-        </p>
+        <div className="empty-state">
+          <div className="alert-error">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Access Restricted: This view requires Administrator privileges (`admin` Cognito group).
+          </div>
+          <Link to="/products" className="btn btn-secondary">Return to Catalogue</Link>
+        </div>
       )}
     </ProtectedRoute>
   );
@@ -58,33 +68,134 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   const auth = useAuth();
   const isAdmin = useIsAdmin();
+  const location = useLocation();
+
+  const userEmail = auth.user?.profile.email as string | undefined;
+
+  async function signOut(): Promise<void> {
+    await auth.removeUser();
+    window.location.assign(createCognitoLogoutUrl(getRuntimeConfig()));
+  }
+
+  if (auth.isLoading) {
+    return (
+      <div className="loading-screen" style={{ minHeight: "100vh" }}>
+        <div className="spinner"></div>
+        <p>Verifying authentication session...</p>
+      </div>
+    );
+  }
+
+  if (!auth.isAuthenticated) {
+    return <SignInPage />;
+  }
 
   return (
     <div className="app">
       <header className="app-header">
-        <Link to="/" className="brand">
-          SmartRetailX
-        </Link>
-        <nav>
-          <Link to="/products">Products</Link>
-          {auth.isAuthenticated && <Link to="/orders/new">New order</Link>}
-          {auth.isAuthenticated && <Link to="/orders">My orders</Link>}
-          {isAdmin && <Link to="/admin/products">Admin: products</Link>}
-          {isAdmin && <Link to="/admin/stock">Admin: stock</Link>}
-          {auth.isAuthenticated ? (
-            <button
-              onClick={() =>
-                void auth.signoutRedirect({
-                  post_logout_redirect_uri: window.location.origin,
-                })
-              }
+        <div className="header-left">
+          <Link to="/" className="brand">
+            SmartRetailX
+          </Link>
+          <nav>
+            <Link
+              to="/products"
+              className={location.pathname === "/products" ? "active" : ""}
             >
-              Sign out ({auth.user?.profile.email as string | undefined})
-            </button>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              Products
+            </Link>
+            {auth.isAuthenticated && (
+              <Link
+                to="/cart"
+                className={location.pathname === "/cart" ? "active" : ""}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                Cart
+              </Link>
+            )}
+            {auth.isAuthenticated && (
+              <Link
+                to="/orders"
+                className={location.pathname === "/orders" ? "active" : ""}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                My Orders
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                to="/admin/promotions"
+                className={location.pathname === "/admin/promotions" ? "active" : ""}
+              >
+                Admin: Promotions
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                to="/admin/fulfilment"
+                className={location.pathname === "/admin/fulfilment" ? "active" : ""}
+              >
+                Admin: Fulfilment
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                to="/admin/products"
+                className={location.pathname === "/admin/products" ? "active" : ""}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                Admin: Products
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                to="/admin/stock"
+                className={location.pathname === "/admin/stock" ? "active" : ""}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                Admin: Stock
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                to="/admin/users"
+                className={location.pathname === "/admin/users" ? "active" : ""}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Admin: Users
+              </Link>
+            )}
+          </nav>
+        </div>
+
+        <div className="header-user">
+          {auth.isAuthenticated ? (
+            <>
+              <div className="user-badge">
+                <span>{userEmail ?? "Authenticated User"}</span>
+                <span className={`role-pill ${isAdmin ? "admin" : "customer"}`}>
+                  {isAdmin ? "Admin" : "Customer"}
+                </span>
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => void signOut()}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                Sign out
+              </button>
+            </>
           ) : (
-            <button onClick={() => void auth.signinRedirect()}>Sign in</button>
+            <button
+              className="btn btn-sm"
+              onClick={() => auth.signinRedirect()}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+              Sign in
+            </button>
           )}
-        </nav>
+        </div>
       </header>
 
       <main className="app-main">
@@ -96,6 +207,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ProductsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/cart"
+            element={
+              <ProtectedRoute>
+                <CartPage />
               </ProtectedRoute>
             }
           />
@@ -124,6 +243,14 @@ export default function App() {
             }
           />
           <Route
+            path="/admin/promotions"
+            element={<AdminRoute><AdminPromotionsPage /></AdminRoute>}
+          />
+          <Route
+            path="/admin/fulfilment"
+            element={<AdminRoute><AdminFulfilmentPage /></AdminRoute>}
+          />
+          <Route
             path="/admin/stock"
             element={
               <AdminRoute>
@@ -131,9 +258,33 @@ export default function App() {
               </AdminRoute>
             }
           />
-          <Route path="*" element={<p>Not found</p>} />
+          <Route
+            path="/admin/users"
+            element={
+              <AdminRoute>
+                <AdminUsersPage />
+              </AdminRoute>
+            }
+          />
+          <Route path="/login" element={<SignInPage />} />
+          <Route
+            path="*"
+            element={
+              <div className="empty-state">
+                <div className="empty-state-icon">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <h3>404 Page Not Found</h3>
+                <p>The requested URL path does not exist on SmartRetailX.</p>
+                <Link to="/products" className="btn btn-secondary" style={{ marginTop: "1rem" }}>
+                  Back to Catalogue
+                </Link>
+              </div>
+            }
+          />
         </Routes>
       </main>
     </div>
   );
 }
+

@@ -1,0 +1,34 @@
+name: reusable-terraform-check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.53.0
+      - name: Terraform formatting and validation
+        working-directory: infra
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+      - name: TFLint
+        working-directory: infra
+        run: |
+          tflint --init
+          tflint --recursive
+      - name: Checkov is a blocking gate
+        run: |
+          pip install checkov==3.3.2
+          checkov -d infra --framework terraform --compact

@@ -28,7 +28,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from .models import ReservationLine, ReservationResult, StockLevel
+from .models import ProcessingOutcome, ReservationLine, ReservationResult, StockLevel
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,24 @@ class ResilientStock:
 
     def reserve(self, lines: list[ReservationLine]) -> ReservationResult:
         return self._call(self._repo.reserve, lines)
+
+    def process_order(
+        self,
+        event_id: str,
+        order_id: str,
+        user_id: str | None,
+        lines: list[ReservationLine],
+        passthrough: dict,
+    ) -> ProcessingOutcome:
+        return self._call(
+            self._repo.process_order, event_id, order_id, user_id, lines, passthrough
+        )
+
+    def pending_outbox(self, limit: int = 25):
+        return self._call(self._repo.pending_outbox, limit)
+
+    def mark_outbox_published(self, event_id: str, message_id: str) -> None:
+        return self._call(self._repo.mark_outbox_published, event_id, message_id)
 
     def release(self, lines: list[ReservationLine]) -> None:
         return self._call(self._repo.release, lines)

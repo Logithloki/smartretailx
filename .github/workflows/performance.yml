@@ -1,0 +1,48 @@
+name: Performance evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [test, staging]
+        required: true
+      profile:
+        type: choice
+        options: [smoke, load, concurrent, stress, spike]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smartretailx-performance-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  k6:
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      - name: Run intentionally selected profile
+        env:
+          BASE_URL: ${{ vars.API_BASE_URL }}
+          K6_PROFILE: ${{ inputs.profile }}
+          AUTH_TOKEN: ${{ secrets.K6_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          case '${{ inputs.profile }}' in
+            smoke) script=k6-tests/order-smoke.js ;;
+            load) script=k6-tests/load-test.js ;;
+            concurrent) script=k6-tests/concurrent-users.js ;;
+            stress) script=k6-tests/stress-test.js ;;
+            spike) script=k6-tests/spike-test.js ;;
+          esac
+          k6 run --summary-export k6-summary.json "$script"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-${{ inputs.environment }}-${{ inputs.profile }}
+          path: k6-summary.json

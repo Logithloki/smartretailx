@@ -1,0 +1,182 @@
+name: Build immutable release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: smartretailx-release
+  cancel-in-progress: false
+
+jobs:
+  pr-equivalent-gate:
+    uses: ./.github/workflows/pr-ci.yml
+
+  build-order:
+    needs: pr-equivalent-gate
+    uses: ./.github/workflows/reusable-container-build.yml
+    with:
+      service: order
+      role_arn: ${{ vars.SMARTRETAILX_RELEASE_ROLE_ARN }}
+
+  build-inventory:
+    needs: pr-equivalent-gate
+    uses: ./.github/workflows/reusable-container-build.yml
+    with:
+      service: inventory
+      role_arn: ${{ vars.SMARTRETAILX_RELEASE_ROLE_ARN }}
+
+  build-product:
+    needs: pr-equivalent-gate
+    uses: ./.github/workflows/reusable-container-build.yml
+    with:
+      service: product
+      role_arn: ${{ vars.SMARTRETAILX_RELEASE_ROLE_ARN }}
+
+  build-user:
+    needs: pr-equivalent-gate
+    uses: ./.github/workflows/reusable-container-build.yml
+    with:
+      service: user
+      role_arn: ${{ vars.SMARTRETAILX_RELEASE_ROLE_ARN }}
+
+  package-portable-artifacts:
+    needs: pr-equivalent-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build immutable SPA with runtime configuration placeholder
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          tar -C dist -czf ../smartretailx-spa.tgz .
+          sha256sum ../smartretailx-spa.tgz > ../smartretailx-spa.tgz.sha256
+      - name: Package Lambda source artifacts deterministically
+        shell: bash
+        run: |
+          mkdir -p release/lambdas
+          for component in notification-lambda reconciliation-lambda ws-authorizer-lambda ws-connect-lambda ws-disconnect-lambda ws-push-lambda order-outbox-publisher; do
+            stage="release/lambda-stage/$component"
+            mkdir -p "$stage"
+            python -m pip install --disable-pip-version-check --no-compile \
+              --platform manylinux2014_aarch64 --implementation cp --python-version 3.12 \
+              --only-binary=:all: --target "$stage" \
+              -r "services/$component/requirements.txt"
+            cp "services/$component/handler.py" "$stage/handler.py"
+            python - "$component" "$stage" <<'PY'
+          import pathlib, sys, zipfile
+          component = sys.argv[1]
+          source = pathlib.Path(sys.argv[2])
+          target = pathlib.Path("release/lambdas") / f"{component}.zip"
+          with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+              for path in sorted(p for p in source.rglob("*") if p.is_file()):
+                  relative = path.relative_to(source).as_posix()
+                  info = zipfile.ZipInfo(relative, (1980, 1, 1, 0, 0, 0))
+                  info.external_attr = 0o644 << 16
+                  archive.writestr(info, path.read_bytes())
+          PY
+          done
+          rm -rf release/lambda-stage
+          sha256sum release/lambdas/*.zip > release/lambda-checksums.sha256
+          cp frontend/smartretailx-spa.tgz frontend/smartretailx-spa.tgz.sha256 release/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-release-artifacts
+          path: release/
+
+  manifest:
+    needs: [build-order, build-inventory, build-product, build-user, package-portable-artifacts]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable-release-artifacts
+          path: release
+      - name: Generate release manifest
+        env:
+          ORDER_DIGEST: ${{ needs.build-order.outputs.digest }}
+          INVENTORY_DIGEST: ${{ needs.build-inventory.outputs.digest }}
+          PRODUCT_DIGEST: ${{ needs.build-product.outputs.digest }}
+          USER_DIGEST: ${{ needs.build-user.outputs.digest }}
+        shell: bash
+        run: |
+          release_id="${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}"
+          lambda_checksums=$(jq -Rn '[inputs | select(length>0)]' < release/lambda-checksums.sha256)
+          spa_checksum=$(cut -d' ' -f1 release/smartretailx-spa.tgz.sha256)
+          jq -n \
+            --arg release_id "$release_id" \
+            --arg git_sha "$GITHUB_SHA" \
+            --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg order_service_digest "$ORDER_DIGEST" \
+            --arg inventory_service_digest "$INVENTORY_DIGEST" \
+            --arg product_service_digest "$PRODUCT_DIGEST" \
+            --arg user_service_digest "$USER_DIGEST" \
+            --arg spa_checksum "$spa_checksum" \
+            --arg source_workflow "$GITHUB_WORKFLOW" \
+            --arg source_run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg terraform_version "1.9.5" \
+            --argjson lambda_artifact_checksums "$lambda_checksums" \
+            '{release_id,git_sha,created_at,order_service_digest,inventory_service_digest,product_service_digest,user_service_digest,lambda_artifact_checksums,lambda_versions:{},spa_checksum,source_workflow,source_run,terraform_version,environments:{}}' \
+            > release-manifest.json
+          jq -e '.order_service_digest | startswith("sha256:")' release-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: release-manifest.json
+
+  deploy-baseline-order:
+    if: vars.BASELINE_AUTO_DEPLOY == 'true'
+    needs: [manifest, build-order]
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
+    with:
+      service: order
+      image_digest: ${{ needs.build-order.outputs.digest }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: development
+      cluster_name: smartretailx-cluster
+
+  deploy-baseline-inventory:
+    if: vars.BASELINE_AUTO_DEPLOY == 'true'
+    needs: [manifest, build-inventory]
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
+    with:
+      service: inventory
+      image_digest: ${{ needs.build-inventory.outputs.digest }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: development
+      cluster_name: smartretailx-cluster
+      run_migration: true
+
+  deploy-baseline-product:
+    if: vars.BASELINE_AUTO_DEPLOY == 'true'
+    needs: [manifest, build-product]
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
+    with:
+      service: product
+      image_digest: ${{ needs.build-product.outputs.digest }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: development
+      cluster_name: smartretailx-cluster
+
+  deploy-baseline-user:
+    if: vars.BASELINE_AUTO_DEPLOY == 'true'
+    needs: [manifest, build-user]
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
+    with:
+      service: user
+      image_digest: ${{ needs.build-user.outputs.digest }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: development
+      cluster_name: smartretailx-cluster

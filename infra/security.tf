@@ -131,7 +131,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
   })
 }
 
-# Order Service: orders + idempotency tables, publish commands to SQS.
+# Order Service: atomically writes orders + outbox and manages idempotency.
 resource "aws_iam_role" "order_task" {
   name               = "${var.project_name}-order-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
@@ -143,12 +143,33 @@ resource "aws_iam_role_policy" "order_task" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid      = "ProductPricingReadModel"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:BatchGetItem"]
+        Resource = [aws_dynamodb_table.products.arn]
+      },
+      {
+        Sid    = "PromotionPricingReadModel"
+        Effect = "Allow"
+        Action = ["dynamodb:GetItem", "dynamodb:Query"]
+        Resource = [
+          aws_dynamodb_table.promotions.arn,
+          "${aws_dynamodb_table.promotions.arn}/index/enabled-startsAt-index"
+        ]
+      },
+      {
+        Sid      = "OrderOutboxTable"
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem"]
+        Resource = [aws_dynamodb_table.order_outbox.arn]
+      },
+      {
         # Orders: no DeleteItem. Orders are financial records - the same
         # reasoning that removed TTL from this table (backlog item 7) says the
         # service should not be able to delete one either.
         Sid    = "OrdersTable"
         Effect = "Allow"
-        Action = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"]
+        Action = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query", "dynamodb:Scan"]
         Resource = [
           aws_dynamodb_table.orders.arn,
           "${aws_dynamodb_table.orders.arn}/index/*"
@@ -167,11 +188,6 @@ resource "aws_iam_role_policy" "order_task" {
           "dynamodb:DeleteItem"
         ]
         Resource = [aws_dynamodb_table.idempotency.arn]
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["sqs:SendMessage"]
-        Resource = [aws_sqs_queue.orders.arn]
       },
       {
         # Saga compensation receiver.
@@ -222,8 +238,8 @@ resource "aws_iam_role_policy" "user_task" {
       Effect = "Allow"
       Action = [
         "cognito-idp:AdminGetUser",
-        "cognito-idp:AdminUpdateUserAttributes",
         "cognito-idp:AdminListGroupsForUser",
+        "cognito-idp:AdminDeleteUser",
         "cognito-idp:ListUsers"
       ]
       Resource = [aws_cognito_user_pool.main.arn]
@@ -251,6 +267,12 @@ resource "aws_iam_role_policy" "product_task" {
           aws_dynamodb_table.products.arn,
           "${aws_dynamodb_table.products.arn}/index/*"
         ]
+      },
+      {
+        Sid      = "PromotionReadsAndWrites"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:PutItem", "dynamodb:UpdateItem"]
+        Resource = [aws_dynamodb_table.promotions.arn, "${aws_dynamodb_table.promotions.arn}/index/*"]
       },
       {
         # Writes go to the base table only - a GSI cannot be written directly,
@@ -468,7 +490,7 @@ resource "aws_iam_role_policy" "scheduler" {
         Sid      = "InvokeReconciliation"
         Effect   = "Allow"
         Action   = ["lambda:InvokeFunction"]
-        Resource = [aws_lambda_function.reconciliation.arn]
+        Resource = [aws_lambda_alias.reconciliation.arn]
       }
     ]
   })
@@ -484,15 +506,9 @@ resource "aws_iam_role_policy" "scheduler" {
 # Split (matches the least-privilege discussion in the report):
 #   connect      -> PutItem only on websocket-connections (writes its own row)
 #   disconnect   -> DeleteItem only (removes its own row; no read needed)
-#   push         -> Scan + Query + DeleteItem on the table (fan-out lookup +
-#                   inline pruning of stale rows) PLUS
+#   push         -> Query on userId-index (customer-scoped fan-out lookup) +
+#                   DeleteItem on the table (inline pruning of stale rows) PLUS
 #                   execute-api:ManageConnections on the WSS stage ARN
-#
-# Why Scan on push and not a userId GSI: adding a GSI would modify the
-# existing websocket-connections table (out of scope for this chunk),
-# and at demo scale a Scan across an active-connections table (< 100 rows
-# per session) is defensible. Report notes `userId-index` as the
-# production upgrade for k6 scale.
 
 resource "aws_iam_role_policy" "ws_connect_lambda_data" {
   name = "websocket-connections-put"
@@ -529,15 +545,22 @@ resource "aws_iam_role_policy" "ws_push_lambda_data" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Scan + Query for the fan-out lookup; DeleteItem so stale rows
-        # (410 GoneException) can be pruned inline.
-        Sid    = "ReadAndPruneConnections"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:Scan",
-          "dynamodb:Query",
-          "dynamodb:DeleteItem",
-        ]
+        Sid      = "ReadOwnedConnections"
+        Effect   = "Allow"
+        Action   = ["dynamodb:Query"]
+        Resource = ["${aws_dynamodb_table.websocket_connections.arn}/index/userId-index"]
+      },
+      {
+        Sid      = "ReadPublicConnectionIds"
+        Effect   = "Allow"
+        Action   = ["dynamodb:Scan"]
+        Resource = [aws_dynamodb_table.websocket_connections.arn]
+      },
+      {
+        # Stale rows (410 GoneException) are pruned inline.
+        Sid      = "PruneStaleConnection"
+        Effect   = "Allow"
+        Action   = ["dynamodb:DeleteItem"]
         Resource = [aws_dynamodb_table.websocket_connections.arn]
       },
       {
@@ -559,11 +582,33 @@ resource "aws_iam_role_policy" "ws_push_lambda_data" {
 # Defined exclusively in Terraform; the Week-1 console-created pool is gone.
 # Free tier covers this demo's MAU, so it is not gated on `live`.
 
+locals {
+  cognito_restrict_localhost = contains(["staging", "production"], var.environment_name)
+  cognito_frontend_callback_urls = local.cognito_restrict_localhost ? [
+    for url in var.frontend_callback_urls : url
+    if !startswith(url, "http://localhost") && !startswith(url, "http://127.0.0.1")
+  ] : var.frontend_callback_urls
+  cognito_frontend_logout_urls = local.cognito_restrict_localhost ? [
+    for url in var.frontend_logout_urls : url
+    if !startswith(url, "http://localhost") && !startswith(url, "http://127.0.0.1")
+  ] : var.frontend_logout_urls
+}
+
 resource "aws_cognito_user_pool" "main" {
   name = "${var.project_name}-users"
 
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
+
+  verification_message_template {
+    default_email_option = "CONFIRM_WITH_CODE"
+    email_subject        = "Welcome to SmartRetailX - Your Verification Code"
+    email_message        = "<h2>Welcome to SmartRetailX!</h2><p>Thank you for creating an account with us. To complete your registration, please use the following 6-digit verification code:</p><h3 style='color: #059669; font-size: 24px; letter-spacing: 2px;'>{####}</h3><p>If you did not request this code, please safely ignore this email.</p><br><p>Best regards,<br><strong>The SmartRetailX Team</strong></p>"
+  }
+
+  email_configuration {
+    email_sending_account = "COGNITO_DEFAULT"
+  }
 
   # MFA is OFF for the demo; report documents it as a one-flag scale-up
   # (production practices at demo sizing — lecturer ruling).
@@ -586,9 +631,101 @@ resource "aws_cognito_user_pool" "main" {
     allow_admin_create_user_only = false # customers self-register (UI scope H.2)
   }
 
+  dynamic "lambda_config" {
+    for_each = var.enable_cognito_auto_confirm ? [1] : []
+    content {
+      pre_sign_up = aws_lambda_function.cognito_auto_confirm.arn
+    }
+  }
+
   tags = {
     Name = "${var.project_name}-users"
   }
+}
+
+# ─── Cognito Pre-SignUp Auto-Confirm & SES Registration Lambda ───
+data "archive_file" "cognito_auto_confirm_zip" {
+  type        = "zip"
+  output_path = "${path.module}/cognito_auto_confirm.zip"
+  source {
+    content  = <<EOF
+import boto3
+import os
+
+ses_client = boto3.client('ses', region_name=os.environ.get('AWS_REGION', 'eu-west-1'))
+
+def handler(event, context):
+    event['response']['autoConfirmUser'] = True
+    event['response']['autoVerifyEmail'] = True
+    
+    # Automatically register new user's email in AWS SES
+    email = event.get('request', {}).get('userAttributes', {}).get('email')
+    if email:
+        try:
+            ses_client.verify_email_identity(EmailAddress=email)
+            print(f"Dispatched SES verification to {email}")
+        except Exception as e:
+            print(f"SES verification exception for {email}: {e}")
+            
+    return event
+EOF
+    filename = "index.py"
+  }
+}
+
+resource "aws_iam_role" "cognito_auto_confirm_role" {
+  name = "${var.project_name}-cognito-auto-confirm-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "cognito_auto_confirm_ses" {
+  name = "${var.project_name}-cognito-ses-verify-policy"
+  role = aws_iam_role.cognito_auto_confirm_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ses:VerifyEmailIdentity", "ses:GetIdentityVerificationAttributes"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cognito_auto_confirm_logs" {
+  role       = aws_iam_role.cognito_auto_confirm_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_lambda_function" "cognito_auto_confirm" {
+  filename         = data.archive_file.cognito_auto_confirm_zip.output_path
+  function_name    = "${var.project_name}-cognito-auto-confirm"
+  role             = aws_iam_role.cognito_auto_confirm_role.arn
+  handler          = "index.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.cognito_auto_confirm_zip.output_base64sha256
+}
+
+resource "aws_lambda_permission" "cognito_auto_confirm_perm" {
+  statement_id  = "AllowCognitoInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cognito_auto_confirm.function_name
+  principal     = "cognito-idp.amazonaws.com"
+  source_arn    = aws_cognito_user_pool.main.arn
 }
 
 # Hosted UI needs a domain or the login page simply does not exist
@@ -616,19 +753,18 @@ resource "aws_cognito_user_pool_client" "spa" {
   # Cognito requires every URL used in an auth-code flow to be pre-registered,
   # so the SPA cannot receive the callback on a URL not in this list.
   callback_urls = concat(
-    var.frontend_callback_urls,
+    local.cognito_frontend_callback_urls,
     [
       "https://${aws_cloudfront_distribution.main.domain_name}/callback",
       "https://${aws_cloudfront_distribution.main.domain_name}/",
     ],
   )
   logout_urls = concat(
-    var.frontend_logout_urls,
+    local.cognito_frontend_logout_urls,
     ["https://${aws_cloudfront_distribution.main.domain_name}/"],
   )
 
   explicit_auth_flows = [
-    "ALLOW_USER_SRP_AUTH",
     "ALLOW_ADMIN_USER_PASSWORD_AUTH", # scripts/get-jwt.sh for CW smoke tests
     "ALLOW_REFRESH_TOKEN_AUTH"
   ]
@@ -644,6 +780,73 @@ resource "aws_cognito_user_pool_client" "spa" {
   }
 
   prevent_user_existence_errors = "ENABLED"
+}
+
+# ─── Cognito Hosted UI Customization ─────────────────────────
+resource "aws_cognito_user_pool_ui_customization" "main" {
+  client_id    = aws_cognito_user_pool_client.spa.id
+  user_pool_id = aws_cognito_user_pool.main.id
+
+  css = <<EOF
+.background-customizable {
+  background-color: #fafafa !important;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.banner-customizable {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e4e4e7 !important;
+  padding: 16px 0 !important;
+}
+
+.label-customizable {
+  color: #09090b !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+}
+
+.textDescription-customizable {
+  color: #52525b !important;
+  font-size: 13px !important;
+  padding-top: 6px !important;
+}
+
+.inputField-customizable {
+  border-radius: 8px !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #09090b !important;
+  padding: 10px 14px !important;
+  font-size: 14px !important;
+  background-color: #ffffff !important;
+}
+
+.inputField-customizable:focus {
+  border-color: #09090b !important;
+  box-shadow: 0 0 0 3px rgba(9, 9, 11, 0.08) !important;
+  background-color: #ffffff !important;
+}
+
+.submitButton-customizable {
+  background-color: #09090b !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  color: #ffffff !important;
+  border: none !important;
+  padding: 11px !important;
+  letter-spacing: 0.3px !important;
+}
+
+.submitButton-customizable:hover {
+  background-color: #18181b !important;
+}
+
+.redirect-customizable {
+  color: #09090b !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+}
+EOF
 }
 
 # RBAC groups. The HTTP API JWT authorizer validates signature/claims only —

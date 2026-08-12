@@ -1,0 +1,165 @@
+name: Promote immutable release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: Successful main-branch Build immutable release run ID
+        required: true
+        type: string
+      environment:
+        description: "Promote in order: development, test, then staging"
+        required: true
+        type: choice
+        options: [development, test, staging]
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: smartretailx-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.manifest.outputs.release_id }}
+      order_digest: ${{ steps.manifest.outputs.order_digest }}
+      inventory_digest: ${{ steps.manifest.outputs.inventory_digest }}
+      product_digest: ${{ steps.manifest.outputs.product_digest }}
+      user_digest: ${{ steps.manifest.outputs.user_digest }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: release
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ github.token }}
+      - id: manifest
+        name: Validate release authority
+        shell: bash
+        run: |
+          jq -e '
+            (.release_id | length > 0) and
+            (.git_sha | test("^[0-9a-f]{40}$")) and
+            ([.order_service_digest,.inventory_service_digest,.product_service_digest,.user_service_digest]
+              | all(test("^sha256:[0-9a-f]{64}$")))
+          ' release/release-manifest.json >/dev/null
+          echo "release_id=$(jq -r .release_id release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "order_digest=$(jq -r .order_service_digest release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "inventory_digest=$(jq -r .inventory_service_digest release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "product_digest=$(jq -r .product_service_digest release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "user_digest=$(jq -r .user_service_digest release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+
+  ecs:
+    needs: release
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - service: order
+            digest_output: order_digest
+            migrate: false
+          - service: inventory
+            digest_output: inventory_digest
+            migrate: true
+          - service: product
+            digest_output: product_digest
+            migrate: false
+          - service: user
+            digest_output: user_digest
+            migrate: false
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
+    with:
+      service: ${{ matrix.service }}
+      image_digest: ${{ needs.release.outputs[matrix.digest_output] }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: ${{ inputs.environment }}
+      cluster_name: ${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}
+      project_name: ${{ vars.SMARTRETAILX_PROJECT_NAME }}
+      run_migration: ${{ matrix.migrate }}
+
+  lambdas:
+    needs: [release, ecs]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - component: notification-lambda
+            suffix: notification
+          - component: reconciliation-lambda
+            suffix: stock-reconciliation
+          - component: ws-authorizer-lambda
+            suffix: ws-authorizer
+          - component: ws-connect-lambda
+            suffix: ws-connect
+          - component: ws-disconnect-lambda
+            suffix: ws-disconnect
+          - component: ws-push-lambda
+            suffix: ws-push
+          - component: order-outbox-publisher
+            suffix: order-outbox-publisher
+    uses: ./.github/workflows/reusable-deploy-lambda.yml
+    with:
+      component: ${{ matrix.component }}
+      function_name: ${{ format('{0}-{1}', vars.SMARTRETAILX_PROJECT_NAME, matrix.suffix) }}
+      alias_name: ${{ inputs.environment }}
+      release_run_id: ${{ inputs.release_run_id }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: ${{ inputs.environment }}
+
+  frontend:
+    needs: [release, ecs, lambdas]
+    uses: ./.github/workflows/reusable-deploy-frontend.yml
+    with:
+      release_run_id: ${{ inputs.release_run_id }}
+      release_id: ${{ needs.release.outputs.release_id }}
+      role_arn: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+      environment_name: ${{ inputs.environment }}
+      bucket_name: ${{ vars.SMARTRETAILX_SPA_BUCKET }}
+      distribution_id: ${{ vars.SMARTRETAILX_DISTRIBUTION_ID }}
+      api_base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      websocket_url: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
+      cognito_authority: ${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}
+      cognito_domain: ${{ vars.SMARTRETAILX_COGNITO_DOMAIN }}
+      cognito_client_id: ${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}
+      redirect_uri: ${{ format('{0}/callback', vars.SMARTRETAILX_PUBLIC_URL) }}
+      logout_uri: ${{ format('{0}/', vars.SMARTRETAILX_PUBLIC_URL) }}
+
+  smoke:
+    needs: frontend
+    uses: ./.github/workflows/reusable-smoke-tests.yml
+    with:
+      environment_name: ${{ inputs.environment }}
+      frontend_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      api_base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      websocket_url: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
+    secrets:
+      ACCESS_TOKEN: ${{ secrets.SMARTRETAILX_SMOKE_ACCESS_TOKEN }}
+
+  browser-e2e:
+    if: inputs.environment != 'development'
+    needs: smoke
+    uses: ./.github/workflows/reusable-browser-e2e.yml
+    with:
+      environment_name: ${{ inputs.environment }}
+      base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+    secrets:
+      CUSTOMER_USERNAME: ${{ secrets.SMARTRETAILX_CUSTOMER_USERNAME }}
+      CUSTOMER_PASSWORD: ${{ secrets.SMARTRETAILX_CUSTOMER_PASSWORD }}
+      ADMIN_USERNAME: ${{ secrets.SMARTRETAILX_ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.SMARTRETAILX_ADMIN_PASSWORD }}
+
+  api-contracts:
+    if: inputs.environment != 'development'
+    needs: smoke
+    uses: ./.github/workflows/reusable-api-tests.yml
+    with:
+      environment_name: ${{ inputs.environment }}
+      api_base_url: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+    secrets:
+      CUSTOMER_TOKEN: ${{ secrets.SMARTRETAILX_CUSTOMER_TOKEN }}
+      ADMIN_TOKEN: ${{ secrets.SMARTRETAILX_ADMIN_TOKEN }}

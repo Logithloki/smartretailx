@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import threading
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
-from srx_common import Authenticator, configure_logging
+from srx_common import Authenticator, configure_logging, instrument_fastapi
 
 from .cache import ProductCache
 from .config import Settings, get_settings
@@ -15,8 +17,18 @@ from .models import (
     ProductCreate,
     ProductListResponse,
     ProductUpdate,
+    Promotion,
+    PromotionCreate,
+    PromotionListResponse,
+    PromotionUpdate,
 )
-from .services import ProductAlreadyExists, ProductNotFound, ProductRepository
+from .services import (
+    ProductAlreadyExists,
+    ProductNotFound,
+    ProductRepository,
+    PromotionAlreadyExists,
+    PromotionNotFound,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +49,34 @@ def create_app(
     )
     auth = Authenticator(settings)
 
+    stop_reconciler = threading.Event()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        def reconcile_loop() -> None:
+            # Every task may run this loop. Conditional DynamoDB transitions
+            # guarantee only one task wins any SCHEDULED->ACTIVE / ACTIVE->EXPIRED move.
+            while not stop_reconciler.wait(settings.promotion_reconcile_seconds):
+                try:
+                    repo.reconcile_promotions()
+                except Exception:
+                    logger.exception("promotion lifecycle reconciliation failed")
+
+        worker = threading.Thread(target=reconcile_loop, name="promotion-reconciler", daemon=True)
+        worker.start()
+        try:
+            yield
+        finally:
+            stop_reconciler.set()
+            worker.join(timeout=1)
+
     app = FastAPI(
         title="SmartRetailX Product Service",
         version="1.0.0",
         description="Product catalogue with a per-task TTL cache.",
+        lifespan=lifespan,
     )
+    instrument_fastapi(app, settings.service_name)
 
     @app.get("/health", response_model=HealthResponse, tags=["health"])
     def health() -> HealthResponse:
@@ -60,12 +95,14 @@ def create_app(
         cached = products.get(key)
         if cached is not None:
             response.headers[CACHE_HEADER] = "HIT"
-            return ProductListResponse(products=cached, count=len(cached))
+            priced = [repo.priced(product) for product in cached]
+            return ProductListResponse(products=priced, count=len(priced))
 
         found = repo.list(category=category, limit=limit)
         products.set(key, found)
         response.headers[CACHE_HEADER] = "MISS"
-        return ProductListResponse(products=found, count=len(found))
+        priced = [repo.priced(product) for product in found]
+        return ProductListResponse(products=priced, count=len(priced))
 
     @app.get("/v1/products/{product_id}", response_model=Product, tags=["products"])
     def get_product(
@@ -77,7 +114,7 @@ def create_app(
         cached = products.get(key)
         if cached is not None:
             response.headers[CACHE_HEADER] = "HIT"
-            return cached
+            return repo.priced(cached)
 
         product = repo.get(product_id)
         if product is None:
@@ -88,7 +125,7 @@ def create_app(
             )
         products.set(key, product)
         response.headers[CACHE_HEADER] = "MISS"
-        return product
+        return repo.priced(product)
 
     # ---- admin CRUD (backlog item 28) -----------------------------------
 
@@ -142,6 +179,40 @@ def create_app(
             ) from None
         _invalidate(product_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # ---- promotion administration ---------------------------------------
+
+    @app.get(
+        "/v1/promotions", response_model=PromotionListResponse, tags=["admin"],
+        dependencies=[Depends(auth.requires("admin"))],
+    )
+    def list_promotions(limit: int = Query(100, ge=1, le=100)) -> PromotionListResponse:
+        found = repo.list_promotions(limit)
+        return PromotionListResponse(promotions=found, count=len(found))
+
+    @app.post(
+        "/v1/promotions", response_model=Promotion, status_code=status.HTTP_201_CREATED, tags=["admin"],
+        dependencies=[Depends(auth.requires("admin"))],
+    )
+    def create_promotion(payload: PromotionCreate) -> Promotion:
+        try:
+            created = repo.create_promotion(payload)
+        except PromotionAlreadyExists:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="promotion already exists") from None
+        _invalidate("*")
+        return created
+
+    @app.put(
+        "/v1/promotions/{promotion_id}", response_model=Promotion, tags=["admin"],
+        dependencies=[Depends(auth.requires("admin"))],
+    )
+    def update_promotion(promotion_id: str, payload: PromotionUpdate) -> Promotion:
+        try:
+            updated = repo.update_promotion(promotion_id, payload.model_dump(exclude_none=True))
+        except PromotionNotFound:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="promotion not found") from None
+        _invalidate("*")
+        return updated
 
     def _invalidate(product_id: str) -> None:
         """Drop this task's cached copies after a write.

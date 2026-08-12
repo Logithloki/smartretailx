@@ -53,7 +53,33 @@ def unwrap_sns(record: dict) -> dict:
     return json.loads(message) if isinstance(message, str) else message
 
 
+def event_payload(event: dict) -> dict:
+    """Validate and flatten the versioned envelope for notification logic."""
+    if event.get("eventVersion") is None:
+        return event  # compatibility for notifications already queued before the rollout
+    required = {
+        "eventType",
+        "eventVersion",
+        "eventId",
+        "occurredAt",
+        "correlationId",
+        "aggregateId",
+        "payload",
+    }
+    missing = required.difference(event)
+    if missing or not isinstance(event.get("payload"), dict):
+        raise ValueError(f"invalid event envelope; missing={sorted(missing)}")
+    return {
+        **event["payload"],
+        "eventType": event["eventType"],
+        "eventId": event["eventId"],
+        "correlationId": event["correlationId"],
+        "orderId": event["aggregateId"],
+    }
+
+
 def build_email(event: dict) -> tuple[str, str]:
+    event = event_payload(event)
     order_id = event.get("orderId", "unknown")
     if event.get("eventType") == ORDER_REJECTED:
         reason = event.get("reason") or "an item was unavailable"
@@ -69,6 +95,7 @@ def build_email(event: dict) -> tuple[str, str]:
 
 
 def recipient_for(event: dict) -> str | None:
+    event = event_payload(event)
     return event.get("userEmail") or os.environ.get("NOTIFICATION_FALLBACK_EMAIL") or None
 
 
@@ -76,6 +103,7 @@ def recipient_for(event: dict) -> str | None:
 def deliver(event: dict) -> dict:
     """Send one notification. Separated from the handler so it can be tested
     without constructing a Lambda event."""
+    event = event_payload(event)
     event_type = event.get("eventType")
     if event_type not in {ORDER_CONFIRMED, ORDER_REJECTED}:
         logger.info("ignoring event", extra={"eventType": event_type})
@@ -91,14 +119,39 @@ def deliver(event: dict) -> dict:
     subject, body = build_email(event)
     sender = os.environ["SES_SENDER_EMAIL"]
 
-    response = ses().send_email(
-        Source=sender,
-        Destination={"ToAddresses": [to_address]},
-        Message={
-            "Subject": {"Data": subject, "Charset": "UTF-8"},
-            "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
-        },
-    )
+    try:
+        response = ses().send_email(
+            Source=sender,
+            Destination={"ToAddresses": [to_address]},
+            Message={
+                "Subject": {"Data": subject, "Charset": "UTF-8"},
+                "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
+            },
+        )
+    except Exception as e:
+        # Check if this is an SES Sandbox restriction (MessageRejected: Email address is not verified)
+        if hasattr(e, "response") and e.response.get("Error", {}).get("Code") == "MessageRejected":
+            fallback = os.environ.get("NOTIFICATION_FALLBACK_EMAIL")
+            if fallback and fallback != to_address:
+                logger.warning(
+                    "SES Sandbox restriction: original recipient unverified, rerouting to fallback",
+                    extra={"originalTo": to_address, "fallbackTo": fallback, "orderId": event.get("orderId")}
+                )
+                body = f"[SES SANDBOX NOTE: This email was originally intended for {to_address}]\n\n" + body
+                response = ses().send_email(
+                    Source=sender,
+                    Destination={"ToAddresses": [fallback]},
+                    Message={
+                        "Subject": {"Data": subject, "Charset": "UTF-8"},
+                        "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
+                    },
+                )
+            else:
+                logger.error("SES Sandbox restriction and no valid fallback", exc_info=True)
+                return {"sent": False, "reason": "unverified recipient in sandbox"}
+        else:
+            raise
+            
     logger.info(
         "notification sent",
         extra={

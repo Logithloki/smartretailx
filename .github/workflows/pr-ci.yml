@@ -1,0 +1,76 @@
+name: PR quality gates
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - common
+          - user-service
+          - order-service
+          - inventory-service
+          - product-service
+          - notification-lambda
+          - reconciliation-lambda
+          - ws-authorizer-lambda
+          - ws-connect-lambda
+          - ws-disconnect-lambda
+          - ws-push-lambda
+          - order-outbox-publisher
+    uses: ./.github/workflows/reusable-python-quality.yml
+    with:
+      service: ${{ matrix.service }}
+      coverage_threshold: 60
+
+  frontend:
+    uses: ./.github/workflows/reusable-frontend-quality.yml
+
+  terraform:
+    uses: ./.github/workflows/reusable-terraform-check.yml
+
+  integration:
+    uses: ./.github/workflows/reusable-integration-tests.yml
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  route-and-event-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r services/common/requirements.txt pytest pytest-cov
+      # Plan-backed contracts require an authenticated remote backend and are
+      # exercised in the protected infrastructure validation workflow. PR CI
+      # runs the source-only architecture contracts without AWS credentials.
+      - run: >-
+          python -m pytest tests/architecture -v
+          --ignore=tests/architecture/test_baseline_runtime_contract.py
+          --ignore=tests/architecture/test_cloudwatch_dashboard_contract.py
+          --ignore=tests/architecture/test_terraform_convergence_contract.py
+      - working-directory: services/common
+        run: pytest tests/test_events.py -q

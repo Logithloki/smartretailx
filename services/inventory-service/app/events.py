@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 
 import boto3
 
@@ -69,3 +70,61 @@ class SagaEventPublisher:
             ORDER_REJECTED,
             {"orderId": order_id, "userId": user_id, "reason": reason, **extra},
         )
+
+    def publish_outbox(self, payload: dict) -> str:
+        event_type = payload["eventType"]
+        return self._publish(
+            event_type,
+            {key: value for key, value in payload.items() if key != "eventType"},
+            load_test=bool(payload.get("payload", {}).get("loadTest", False)),
+        )
+
+
+class InventoryOutboxPublisher:
+    """Retryable relay from the Aurora outbox to SNS."""
+
+    def __init__(self, stock, publisher: SagaEventPublisher):
+        self._stock = stock
+        self._publisher = publisher
+
+    def publish_once(self, limit: int = 25) -> int:
+        published = 0
+        for record in self._stock.pending_outbox(limit):
+            try:
+                if hasattr(self._publisher, "publish_outbox"):
+                    message_id = self._publisher.publish_outbox(record.payload)
+                elif record.event_type == ORDER_CONFIRMED:
+                    business = record.payload["payload"]
+                    message_id = self._publisher.order_confirmed(
+                        record.aggregate_id,
+                        business.get("userId"),
+                        **{
+                            "correlationId": record.payload["correlationId"],
+                            "eventId": record.payload["eventId"],
+                        },
+                    )
+                else:
+                    business = record.payload["payload"]
+                    message_id = self._publisher.order_rejected(
+                        record.aggregate_id,
+                        business.get("reason", "rejected"),
+                        business.get("userId"),
+                        **{
+                            "correlationId": record.payload["correlationId"],
+                            "eventId": record.payload["eventId"],
+                        },
+                    )
+                self._stock.mark_outbox_published(record.eventId, message_id)
+                published += 1
+            except Exception:
+                # The stock decision and outcome are already durable. Leave
+                # PENDING for the next poll rather than reprocessing the order.
+                logger.exception("inventory outbox publish failed", extra={"eventId": record.eventId})
+        return published
+
+    def run_forever(self, stop: threading.Event, interval_seconds: int = 2) -> None:
+        logger.info("inventory outbox publisher started")
+        while not stop.is_set():
+            self.publish_once()
+            stop.wait(interval_seconds)
+        logger.info("inventory outbox publisher stopped")

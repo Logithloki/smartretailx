@@ -16,7 +16,7 @@ reset:
 build:
 	docker compose build --no-cache
 
-SERVICES := common user-service order-service inventory-service product-service notification-lambda reconciliation-lambda ws-authorizer-lambda ws-connect-lambda ws-disconnect-lambda ws-push-lambda
+SERVICES := common user-service order-service inventory-service product-service notification-lambda reconciliation-lambda ws-authorizer-lambda ws-connect-lambda ws-disconnect-lambda ws-push-lambda order-outbox-publisher
 
 test:
 	@for s in $(SERVICES); do \

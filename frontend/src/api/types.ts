@@ -12,19 +12,29 @@
  * introduce the float-precision bug this design was set up to avoid.
  */
 
-export type OrderStatus = "PENDING" | "CONFIRMED" | "REJECTED";
+export type OrderStatus = "PENDING" | "CONFIRMED" | "REJECTED" | "CANCEL_PENDING" | "CANCELLED";
+export type FulfilmentStatus = "NOT_STARTED" | "PACKING" | "DISPATCHED" | "OUT_FOR_DELIVERY" | "DELIVERED";
 
 export interface OrderItem {
   productId: string;
+  productName: string;
   quantity: number;
-  unitPrice: string;
+  baseUnitPrice: string;
+  effectiveUnitPrice: string;
+  unitDiscount: string;
+  lineDiscount: string;
+  lineTotal: string;
+  promotionId: string | null;
 }
 
 export interface Order {
   orderId: string;
   userId: string;
   status: OrderStatus;
+  fulfilmentStatus: FulfilmentStatus;
   items: OrderItem[];
+  subtotal: string;
+  discountTotal: string;
   totalAmount: string;
   createdAt: string;
   updatedAt: string;
@@ -37,7 +47,7 @@ export interface OrderListResponse {
 }
 
 export interface CreateOrderRequest {
-  items: OrderItem[];
+  items: Array<Pick<OrderItem, "productId" | "quantity">>;
 }
 
 export interface Product {
@@ -46,12 +56,19 @@ export interface Product {
   price: string;
   category: string;
   description: string | null;
+  basePrice: string | null;
+  effectivePrice: string | null;
+  promotion: { promotionId: string } | null;
+  active: boolean;
 }
 
 export interface ProductListResponse {
   products: Product[];
   count: number;
 }
+
+export interface Availability { productId: string; quantity: number; available: boolean; }
+export interface AvailabilityResponse { availability: Availability[]; count: number; }
 
 export interface ProductCreate {
   productId: string;
@@ -81,4 +98,64 @@ export interface StockListResponse {
 
 export interface StockAdjustment {
   quantity: number;
+}
+
+export interface UserProfile {
+  userId: string;
+  username: string;
+  email: string;
+  groups: string[];
+  userStatus?: string;
+  createdAt?: string;
+}
+
+export interface UserListResponse {
+  users: UserProfile[];
+  nextToken?: string | null;
+}
+
+export type PromotionScope = "PRODUCT" | "CATEGORY";
+export type PromotionLifecycleState = "SCHEDULED" | "ACTIVE" | "EXPIRED" | "DISABLED";
+
+export interface Promotion {
+  promotionId: string;
+  name: string;
+  discountPercent: string;
+  scope: PromotionScope;
+  productIds: string[];
+  category: string | null;
+  startsAt: string;
+  endsAt: string;
+  enabled: boolean;
+  lifecycleState: PromotionLifecycleState;
+  lifecycleVersion: number;
+}
+
+export interface PromotionListResponse {
+  promotions: Promotion[];
+  count: number;
+}
+
+export interface PromotionDraft {
+  promotionId: string;
+  name: string;
+  discountPercent: string;
+  scope: PromotionScope;
+  productIdsText: string;
+  category: string;
+  startsAt: string;
+  endsAt: string;
+  enabled: boolean;
+}
+
+export interface PromotionWrite {
+  promotionId?: string;
+  name: string;
+  discountPercent: string;
+  scope: PromotionScope;
+  productIds: string[];
+  category?: string;
+  startsAt: string;
+  endsAt: string;
+  enabled: boolean;
 }

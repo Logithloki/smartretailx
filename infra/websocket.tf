@@ -89,6 +89,7 @@ resource "aws_lambda_function" "ws_authorizer" {
   source_code_hash = data.archive_file.ws_authorizer.output_base64sha256
   timeout          = 10
   memory_size      = 256
+  publish          = true
 
   tracing_config {
     mode = "Active"
@@ -108,6 +109,12 @@ resource "aws_lambda_function" "ws_authorizer" {
   }
 }
 
+resource "aws_lambda_alias" "ws_authorizer" {
+  name             = var.environment_name == "baseline" ? "development" : var.environment_name
+  function_name    = aws_lambda_function.ws_authorizer.function_name
+  function_version = aws_lambda_function.ws_authorizer.version
+}
+
 resource "aws_cloudwatch_log_group" "ws_authorizer" {
   name              = "/aws/lambda/${aws_lambda_function.ws_authorizer.function_name}"
   retention_in_days = 7
@@ -124,6 +131,7 @@ resource "aws_lambda_permission" "ws_authorizer_invoke" {
   statement_id  = "AllowInvokeFromWebSocketAuthorizer"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.ws_authorizer.function_name
+  qualifier     = aws_lambda_alias.ws_authorizer.name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.ws.execution_arn}/authorizers/*"
 }
@@ -142,7 +150,7 @@ resource "aws_apigatewayv2_authorizer" "ws_connect" {
   api_id           = aws_apigatewayv2_api.ws.id
   name             = "${var.project_name}-ws-cognito"
   authorizer_type  = "REQUEST"
-  authorizer_uri   = aws_lambda_function.ws_authorizer.invoke_arn
+  authorizer_uri   = aws_lambda_alias.ws_authorizer.invoke_arn
   identity_sources = ["route.request.querystring.token"]
 }
 
@@ -155,7 +163,7 @@ resource "aws_apigatewayv2_integration" "ws_connect" {
   count              = var.live ? 1 : 0
   api_id             = aws_apigatewayv2_api.ws.id
   integration_type   = "AWS_PROXY"
-  integration_uri    = aws_lambda_function.ws_connect.invoke_arn
+  integration_uri    = aws_lambda_alias.ws_connect.invoke_arn
   integration_method = "POST"
 }
 
@@ -163,7 +171,7 @@ resource "aws_apigatewayv2_integration" "ws_disconnect" {
   count              = var.live ? 1 : 0
   api_id             = aws_apigatewayv2_api.ws.id
   integration_type   = "AWS_PROXY"
-  integration_uri    = aws_lambda_function.ws_disconnect.invoke_arn
+  integration_uri    = aws_lambda_alias.ws_disconnect.invoke_arn
   integration_method = "POST"
 }
 
@@ -178,7 +186,7 @@ resource "aws_apigatewayv2_integration" "ws_default" {
   count              = var.live ? 1 : 0
   api_id             = aws_apigatewayv2_api.ws.id
   integration_type   = "AWS_PROXY"
-  integration_uri    = aws_lambda_function.ws_disconnect.invoke_arn
+  integration_uri    = aws_lambda_alias.ws_disconnect.invoke_arn
   integration_method = "POST"
 }
 
