@@ -28,6 +28,12 @@ def _container_build_steps() -> list[dict]:
     return workflow["jobs"]["build"]["steps"]
 
 
+def _manifest_step() -> str:
+    release = _workflow(WORKFLOWS / "release.yml")
+    steps = release["jobs"]["manifest"]["steps"]
+    return next(step["run"] for step in steps if step.get("name") == "Generate release manifest")
+
+
 def test_release_packager_places_spa_archive_where_the_packaging_step_reads_it() -> None:
     """A release must carry the SPA archive and its matching checksum into release/."""
     steps = _release_steps()
@@ -54,3 +60,20 @@ def test_trivy_scans_the_arm64_image_variant_produced_by_the_release_build() -> 
     assert len(trivy_steps) == 2
     for step in trivy_steps:
         assert step["env"] == {"TRIVY_PLATFORM": "linux/arm64"}
+
+
+def test_release_manifest_serializes_service_digests_from_the_build_outputs() -> None:
+    """A release manifest must retain the immutable digest strings passed through --arg."""
+    manifest = _manifest_step()
+
+    assert (
+        "'{release_id:$release_id,git_sha:$git_sha,created_at:$created_at,"
+        "order_service_digest:$order_service_digest,"
+        "inventory_service_digest:$inventory_service_digest,"
+        "product_service_digest:$product_service_digest,"
+        "user_service_digest:$user_service_digest,"
+        "lambda_artifact_checksums:$lambda_artifact_checksums,lambda_versions:{},"
+        "spa_checksum:$spa_checksum,source_workflow:$source_workflow,"
+        "source_run:$source_run,terraform_version:$terraform_version,environments:{}}'"
+        in manifest
+    )

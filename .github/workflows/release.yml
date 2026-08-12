@@ -129,7 +129,7 @@ jobs:
             --arg source_run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --arg terraform_version "1.9.5" \
             --argjson lambda_artifact_checksums "$lambda_checksums" \
-            '{release_id,git_sha,created_at,order_service_digest,inventory_service_digest,product_service_digest,user_service_digest,lambda_artifact_checksums,lambda_versions:{},spa_checksum,source_workflow,source_run,terraform_version,environments:{}}' \
+            '{release_id:$release_id,git_sha:$git_sha,created_at:$created_at,order_service_digest:$order_service_digest,inventory_service_digest:$inventory_service_digest,product_service_digest:$product_service_digest,user_service_digest:$user_service_digest,lambda_artifact_checksums:$lambda_artifact_checksums,lambda_versions:{},spa_checksum:$spa_checksum,source_workflow:$source_workflow,source_run:$source_run,terraform_version:$terraform_version,environments:{}}' \
             > release-manifest.json
           jq -e '.order_service_digest | startswith("sha256:")' release-manifest.json
       - uses: actions/upload-artifact@v4
