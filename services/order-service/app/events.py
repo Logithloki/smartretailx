@@ -8,11 +8,19 @@ at exactly one consumer, so it is a command on SQS - not an event.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 import boto3
 from srx_common import new_event
 
 from .models import Order
+
+
+def _json_default(value):
+    """Match the production stream relay's DynamoDB Decimal wire format."""
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    raise TypeError(f"not JSON serialisable: {type(value)}")
 
 def order_created_command(
     order: Order,
@@ -88,7 +96,7 @@ class LocalInlineOutboxPublisher:
                 "EventBusName": self._settings.event_bus_name,
                 "Source": "smartretailx.orders",
                 "DetailType": record["eventType"],
-                "Detail": json.dumps(record["payload"]),
+                "Detail": json.dumps(record["payload"], default=_json_default),
             }])
             if result.get("FailedEntryCount", 0):
                 raise RuntimeError("EventBridge rejected the outbox event")
@@ -96,7 +104,7 @@ class LocalInlineOutboxPublisher:
         else:
             result = self._sqs.send_message(
                 QueueUrl=self._settings.orders_queue_url,
-                MessageBody=json.dumps(record["payload"]),
+                MessageBody=json.dumps(record["payload"], default=_json_default),
                 MessageAttributes={
                     "eventType": {"DataType": "String", "StringValue": record["eventType"]},
                     "eventId": {"DataType": "String", "StringValue": event_id},
