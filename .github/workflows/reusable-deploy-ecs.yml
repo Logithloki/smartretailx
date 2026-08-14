@@ -71,7 +71,27 @@ jobs:
           account=$(aws sts get-caller-identity --query Account --output text)
           image="$account.dkr.ecr.eu-west-1.amazonaws.com/$PROJECT_NAME/${{ inputs.service }}-service@${{ inputs.image_digest }}"
           jq --arg container '${{ inputs.service }}-service' --arg image "$image" '
-            del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)
+            {
+              family,
+              taskRoleArn,
+              executionRoleArn,
+              networkMode,
+              containerDefinitions,
+              volumes,
+              placementConstraints,
+              requiresCompatibilities,
+              cpu,
+              memory,
+              tags,
+              pidMode,
+              ipcMode,
+              proxyConfiguration,
+              inferenceAccelerators,
+              ephemeralStorage,
+              runtimePlatform,
+              enableFaultInjection
+            }
+            | with_entries(select(.value != null))
             | .containerDefinitions |= map(if .name == $container then .image = $image else . end)
           ' current-task-definition.json > rendered-task-definition.json
           test "$(jq --arg c '${{ inputs.service }}-service' '[.containerDefinitions[] | select(.name == $c)] | length' rendered-task-definition.json)" -eq 1
