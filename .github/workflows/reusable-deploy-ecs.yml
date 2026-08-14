@@ -126,10 +126,16 @@ jobs:
             echo "Migration task failed: $container_info"
             task_id=$(basename "$task")
             log_group="/ecs/$PROJECT_NAME-${{ inputs.service }}"
-            echo "Fetching CloudWatch logs from $log_group..."
-            aws logs get-log-events --log-group-name "$log_group" \
-              --log-stream-name "${{ inputs.service }}-service/${{ inputs.service }}-service/$task_id" \
-              --query 'events[*].message' --output text 2>/dev/null || true
+            echo "Fetching CloudWatch logs from $log_group for task $task_id..."
+            stream=$(aws logs describe-log-streams --log-group-name "$log_group" \
+              --query "logStreams[?contains(logStreamName, '$task_id')].logStreamName | [0]" --output text 2>/dev/null || echo "")
+            if [ -n "$stream" ] && [ "$stream" != "None" ]; then
+              echo "--- LOG STREAM: $stream ---"
+              aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$stream" \
+                --query 'events[*].message' --output text || true
+            else
+              echo "Log stream for task $task_id not found in $log_group."
+            fi
             exit 1
           fi
       - name: Update service to the registered revision
