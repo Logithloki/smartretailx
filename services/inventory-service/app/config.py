@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 from srx_common import BaseServiceSettings
 
@@ -31,8 +32,10 @@ class Settings(BaseServiceSettings):
     def sqlalchemy_url(self) -> str:
         if self.database_url:
             return self.database_url
+        user = quote_plus(self.db_user)
+        password = quote_plus(self.db_password)
         return (
-            f"postgresql+psycopg2://{self.db_user}:{self.db_password}"
+            f"postgresql+psycopg2://{user}:{password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
 

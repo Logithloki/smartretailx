@@ -122,7 +122,16 @@ jobs:
           container_info=$(jq -r --arg c "${{ inputs.service }}-service" \
             '.tasks[0].containers[] | select(.name == $c)' <<<"$task_details")
           exit_code=$(jq -r '.exitCode // empty' <<<"$container_info")
-          test "$exit_code" = "0" || { echo "Migration task failed: $container_info"; exit 1; }
+          if [ "$exit_code" != "0" ]; then
+            echo "Migration task failed: $container_info"
+            task_id=$(basename "$task")
+            log_group="/ecs/$PROJECT_NAME-${{ inputs.service }}"
+            echo "Fetching CloudWatch logs from $log_group..."
+            aws logs get-log-events --log-group-name "$log_group" \
+              --log-stream-name "${{ inputs.service }}-service/${{ inputs.service }}-service/$task_id" \
+              --query 'events[*].message' --output text 2>/dev/null || true
+            exit 1
+          fi
       - name: Update service to the registered revision
         shell: bash
         run: |
