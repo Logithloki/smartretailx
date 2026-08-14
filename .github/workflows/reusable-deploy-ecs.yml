@@ -118,9 +118,11 @@ jobs:
             --overrides "$overrides" --query 'tasks[0].taskArn' --output text)
           [[ "$task" == arn:* ]] || { echo "Migration task did not start"; exit 1; }
           aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER_NAME" --tasks "$task"
-          result=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER_NAME" --tasks "$task" \
-            --query 'tasks[0].containers[?name==`${{ inputs.service }}-service`][0].{exitCode:exitCode,reason:reason}' --output json)
-          test "$(jq -r .exitCode <<<"$result")" -eq 0 || { echo "$result"; exit 1; }
+          task_details=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER_NAME" --tasks "$task" --output json)
+          container_info=$(jq -r --arg c "${{ inputs.service }}-service" \
+            '.tasks[0].containers[] | select(.name == $c)' <<<"$task_details")
+          exit_code=$(jq -r '.exitCode // empty' <<<"$container_info")
+          test "$exit_code" = "0" || { echo "Migration task failed: $container_info"; exit 1; }
       - name: Update service to the registered revision
         shell: bash
         run: |
@@ -132,9 +134,9 @@ jobs:
         run: |
           aws ecs wait services-stable --cluster "$ECS_CLUSTER_NAME" \
             --services "$PROJECT_NAME-${{ inputs.service }}-service"
-          primary=$(aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" \
-            --services "$PROJECT_NAME-${{ inputs.service }}-service" \
-            --query 'services[0].deployments[?status==`PRIMARY`][0]' --output json)
+          service_details=$(aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" \
+            --services "$PROJECT_NAME-${{ inputs.service }}-service" --output json)
+          primary=$(jq -r '.services[0].deployments[] | select(.status == "PRIMARY")' <<<"$service_details")
           test "$(jq -r .taskDefinition <<<"$primary")" = '${{ steps.deploy.outputs.task_definition }}'
           test "$(jq -r .rolloutState <<<"$primary")" = COMPLETED
           running=$(jq -r .runningCount <<<"$primary")
