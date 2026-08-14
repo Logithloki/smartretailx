@@ -12,7 +12,8 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().sqlalchemy_url.replace("%", "%%"))
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", get_settings().sqlalchemy_url.replace("%", "%%"))
 target_metadata = Base.metadata
 
 
@@ -29,6 +30,13 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    connection = config.attributes.get("connection", None)
+    if connection is not None:
+        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     import time
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
@@ -38,8 +46,8 @@ def run_migrations_online() -> None:
     max_retries = 5
     for attempt in range(1, max_retries + 1):
         try:
-            with connectable.connect() as connection:
-                context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+            with connectable.connect() as conn:
+                context.configure(connection=conn, target_metadata=target_metadata, compare_type=True)
                 with context.begin_transaction():
                     context.run_migrations()
             break

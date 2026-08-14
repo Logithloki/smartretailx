@@ -111,7 +111,7 @@ jobs:
           network=$(aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" \
             --services "$service" --query 'services[0].networkConfiguration' --output json)
           overrides=$(jq -nc --arg name '${{ inputs.service }}-service' \
-            '{containerOverrides:[{name:$name,command:["alembic","upgrade","head"]}]}')
+            '{containerOverrides:[{name:$name,command:["python","-m","app.migrate"]}]}')
           task=$(aws ecs run-task --cluster "$ECS_CLUSTER_NAME" \
             --task-definition '${{ steps.deploy.outputs.task_definition }}' \
             --launch-type FARGATE --network-configuration "$network" \
@@ -123,18 +123,54 @@ jobs:
             '.tasks[0].containers[] | select(.name == $c)' <<<"$task_details")
           exit_code=$(jq -r '.exitCode // empty' <<<"$container_info")
           if [ "$exit_code" != "0" ]; then
-            echo "Migration task failed: $container_info"
+            task_arn=$(jq -r '.tasks[0].taskArn // "UNKNOWN"' <<<"$task_details")
+            td_arn=$(jq -r '.tasks[0].taskDefinitionArn // "UNKNOWN"' <<<"$task_details")
+            stop_code=$(jq -r '.tasks[0].stopCode // "UNKNOWN"' <<<"$task_details")
+            stopped_reason=$(jq -r '.tasks[0].stoppedReason // "UNKNOWN"' <<<"$task_details")
+            container_name=$(jq -r '.name // "UNKNOWN"' <<<"$container_info")
+            last_status=$(jq -r '.lastStatus // "UNKNOWN"' <<<"$container_info")
+            container_reason=$(jq -r '.reason // "N/A"' <<<"$container_info")
+
+            echo "============================================================"
+            echo "ECS MIGRATION TASK FAILURE DIAGNOSTICS"
+            echo "============================================================"
+            echo "taskArn:           $task_arn"
+            echo "taskDefinitionArn: $td_arn"
+            echo "stopCode:          $stop_code"
+            echo "stoppedReason:     $stopped_reason"
+            echo "container name:    $container_name"
+            echo "lastStatus:        $last_status"
+            echo "exitCode:          ${exit_code:-MISSING}"
+            echo "reason:            $container_reason"
+            echo "============================================================"
+
+            log_group=$(jq -r --arg c "${{ inputs.service }}-service" \
+              '.containerDefinitions[] | select(.name == $c) | .logConfiguration.options["awslogs-group"] // empty' rendered-task-definition.json)
+            stream_prefix=$(jq -r --arg c "${{ inputs.service }}-service" \
+              '.containerDefinitions[] | select(.name == $c) | .logConfiguration.options["awslogs-stream-prefix"] // "ecs"' rendered-task-definition.json)
             task_id=$(basename "$task")
-            log_group="/ecs/$PROJECT_NAME-${{ inputs.service }}"
-            echo "Fetching CloudWatch logs from $log_group for task $task_id..."
-            stream=$(aws logs describe-log-streams --log-group-name "$log_group" \
-              --query "logStreams[?contains(logStreamName, '$task_id')].logStreamName | [0]" --output text 2>/dev/null || echo "")
-            if [ -n "$stream" ] && [ "$stream" != "None" ]; then
-              echo "--- LOG STREAM: $stream ---"
-              aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$stream" \
-                --query 'events[*].message' --output text || true
-            else
-              echo "Log stream for task $task_id not found in $log_group."
+            expected_stream="${stream_prefix}/${{ inputs.service }}-service/${task_id}"
+
+            if [ -n "$log_group" ]; then
+              echo "Fetching CloudWatch logs from group '$log_group' stream '$expected_stream'..."
+              stream=""
+              for i in {1..5}; do
+                found=$(aws logs describe-log-streams --log-group-name "$log_group" \
+                  --log-stream-name-prefix "$expected_stream" \
+                  --query 'logStreams[0].logStreamName' --output text 2>/dev/null || echo "")
+                if [ -n "$found" ] && [ "$found" != "None" ]; then
+                  stream="$found"
+                  break
+                fi
+                sleep 2
+              done
+              if [ -n "$stream" ] && [ "$stream" != "None" ]; then
+                echo "--- CLOUDWATCH LOG STREAM OUTPUT ($stream) ---"
+                aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$stream" \
+                  --query 'events[*].message' --output text || true
+              else
+                echo "Log stream '$expected_stream' not available after bounded retries."
+              fi
             fi
             exit 1
           fi
