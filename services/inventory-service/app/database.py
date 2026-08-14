@@ -98,4 +98,11 @@ def build_session_factory(engine):
 
 
 def create_schema(engine) -> None:
+    """Used ONLY in local tests (SQLite). Production/Aurora schema is managed strictly by Alembic."""
+    url_str = str(engine.url)
+    if not url_str.startswith("sqlite"):
+        raise RuntimeError(
+            "create_schema() / create_all() is strictly prohibited on non-SQLite engines. "
+            "Production schema changes must be executed via Alembic migrations."
+        )
     Base.metadata.create_all(engine)

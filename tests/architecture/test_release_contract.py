@@ -164,6 +164,18 @@ class ImmutableReleaseContractTests(unittest.TestCase):
             # 6: Ensure ARM64 runtimePlatform is preserved
             self.assertEqual(rendered["runtimePlatform"], {"operatingSystemFamily": "LINUX", "cpuArchitecture": "ARM64"})
 
+    def test_migration_command_uses_app_migrate_and_has_diagnostics(self):
+        deploy = (WORKFLOWS / "reusable-deploy-ecs.yml").read_text(encoding="utf-8")
+        self.assertIn('command:["python","-m","app.migrate"]', deploy.replace(" ", ""))
+        self.assertIn("awslogs-group", deploy)
+        self.assertIn("awslogs-stream-prefix", deploy)
+        self.assertIn("${stream_prefix}/${{ inputs.service }}-service/${task_id}", deploy)
+        self.assertIn("ECS MIGRATION TASK FAILURE DIAGNOSTICS", deploy)
+        self.assertIn("stopCode:", deploy)
+        self.assertIn("stoppedReason:", deploy)
+        self.assertIn("exitCode:", deploy)
+        self.assertIn("for i in {1..5}", deploy)
+
 
 if __name__ == "__main__":
     unittest.main()
