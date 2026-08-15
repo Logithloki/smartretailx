@@ -46,6 +46,18 @@ resource "aws_iam_openid_connect_provider" "github" {
 #      the authoritative deployment gate, including for production.
 locals {
   github_deploy_environment = var.environment_name == "baseline" ? "development" : var.environment_name
+
+  # The deploy role only needs the predictable names of the Lambda functions
+  # that CI promotes. Keep these as strings so the IAM policy does not depend
+  # on Lambda resource archives, hashes, or Terraform function resources.
+  gha_deploy_lambda_names = [
+    "${var.project_name}-notification",
+    "${var.project_name}-stock-reconciliation",
+    "${var.project_name}-order-outbox-publisher",
+    "${var.project_name}-ws-connect",
+    "${var.project_name}-ws-disconnect",
+    "${var.project_name}-ws-push",
+  ]
 }
 
 resource "aws_iam_role" "gha_deploy" {
@@ -315,7 +327,7 @@ resource "aws_iam_role_policy" "gha_deploy" {
           "lambda:PublishVersion",
         ]
         Resource = flatten([
-          for function_name in values(local.operational_lambdas) : [
+          for function_name in local.gha_deploy_lambda_names : [
             "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${function_name}",
             "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${function_name}:*",
           ]

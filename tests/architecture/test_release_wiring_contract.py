@@ -195,3 +195,16 @@ def test_github_deploy_role_can_verify_alarms_with_least_privilege() -> None:
         encoding="utf-8"
     )
     assert re.findall(r"aws cloudwatch ([a-z-]+)", workflow) == ["describe-alarms"]
+
+
+def test_github_deploy_policy_uses_stable_lambda_names_without_resource_dependency() -> (
+    None
+):
+    oidc = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")
+    deploy_policy = oidc.split('resource "aws_iam_role_policy" "gha_deploy"', 1)[
+        1
+    ].split('output "github_oidc_role_arn"', 1)[0]
+
+    assert "local.gha_deploy_lambda_names" in deploy_policy
+    assert "local.operational_lambdas" not in deploy_policy
+    assert "aws_lambda_function.cognito_auto_confirm" not in deploy_policy
