@@ -174,7 +174,8 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         self.assertIn("stopCode:", deploy)
         self.assertIn("stoppedReason:", deploy)
         self.assertIn("exitCode:", deploy)
-        self.assertIn("for i in {1..5}", deploy)
+        self.assertIn("for i in {1..12}", deploy)
+        self.assertIn("sleep 5", deploy)
 
 
 if __name__ == "__main__":
