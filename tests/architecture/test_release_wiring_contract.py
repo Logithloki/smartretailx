@@ -52,12 +52,12 @@ def test_order_event_subscription_has_the_exact_three_saga_outcomes() -> None:
 
 
 def test_cancellation_producer_and_consumer_use_the_routed_name() -> None:
-    producer = (ROOT / "services" / "inventory-service" / "app" / "services.py").read_text(
-        encoding="utf-8"
-    )
-    consumer = (ROOT / "services" / "order-service" / "app" / "compensation.py").read_text(
-        encoding="utf-8"
-    )
+    producer = (
+        ROOT / "services" / "inventory-service" / "app" / "services.py"
+    ).read_text(encoding="utf-8")
+    consumer = (
+        ROOT / "services" / "order-service" / "app" / "compensation.py"
+    ).read_text(encoding="utf-8")
 
     assert 'event_type="order-cancelled"' in producer
     assert '"order-cancelled": OrderStatus.CANCELLED' in consumer
@@ -69,7 +69,7 @@ def test_order_caller_checker_rejects_a_monetary_order_payload(tmp_path: Path) -
     workflow.parent.mkdir(parents=True)
     workflow.write_text(
         "curl -X POST /v1/orders -d "
-        "'{\"items\":[{\"productId\":\"p1\",\"quantity\":1,\"unitPrice\":\"0.01\"}]}'",
+        '\'{"items":[{"productId":"p1","quantity":1,"unitPrice":"0.01"}]}\'',
         encoding="utf-8",
     )
 
@@ -79,7 +79,9 @@ def test_order_caller_checker_rejects_a_monetary_order_payload(tmp_path: Path) -
     assert violations[0].field == "unitPrice"
 
 
-def test_order_caller_checker_accepts_identifier_and_quantity_only(tmp_path: Path) -> None:
+def test_order_caller_checker_accepts_identifier_and_quantity_only(
+    tmp_path: Path,
+) -> None:
     checker = _load_caller_checker()
     workflow = tmp_path / "k6-tests" / "safe.js"
     workflow.parent.mkdir(parents=True)
@@ -114,7 +116,9 @@ def test_baseline_release_is_manual_and_uses_the_default_state_lineage() -> None
     assert "-var=project_name=smartretailx" in workflow
 
 
-def test_baseline_release_gates_state_before_plan_and_applies_the_reviewed_artifact() -> None:
+def test_baseline_release_gates_state_before_plan_and_applies_the_reviewed_artifact() -> (
+    None
+):
     assert BASELINE_WORKFLOW.exists(), "same-state baseline release workflow is missing"
     workflow = BASELINE_WORKFLOW.read_text(encoding="utf-8")
 
@@ -140,7 +144,9 @@ def test_plan_role_can_read_the_existing_baseline_state_key() -> None:
     )
 
 
-def test_product_price_refresh_reuses_the_existing_product_stream_and_marker_filter() -> None:
+def test_product_price_refresh_reuses_the_existing_product_stream_and_marker_filter() -> (
+    None
+):
     data = (ROOT / "infra" / "data.tf").read_text(encoding="utf-8")
     pipes = (ROOT / "infra" / "pipes.tf").read_text(encoding="utf-8")
 
@@ -162,9 +168,30 @@ def test_order_status_pipe_includes_live_cancellation_states() -> None:
 
 
 def test_promotions_use_disable_not_hard_delete_and_follow_least_privilege() -> None:
-    main = (ROOT / "services" / "product-service" / "app" / "main.py").read_text(encoding="utf-8")
+    main = (ROOT / "services" / "product-service" / "app" / "main.py").read_text(
+        encoding="utf-8"
+    )
     security = (ROOT / "infra" / "security.tf").read_text(encoding="utf-8")
-    promotion_statement = security.split('Sid      = "PromotionReadsAndWrites"', 1)[1].split("Resource =", 1)[0]
+    promotion_statement = security.split('Sid      = "PromotionReadsAndWrites"', 1)[
+        1
+    ].split("Resource =", 1)[0]
 
     assert '@app.delete(\n        "/v1/promotions' not in main
     assert "dynamodb:DeleteItem" not in promotion_statement
+
+
+def test_github_deploy_role_can_verify_alarms_with_least_privilege() -> None:
+    oidc = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")
+    deploy_policy = oidc.split('resource "aws_iam_role_policy" "gha_deploy"', 1)[
+        1
+    ].split('output "github_oidc_role_arn"', 1)[0]
+
+    assert re.search(r'Sid\s*=\s*"CloudWatchDeploymentVerification"', deploy_policy)
+    assert re.search(r'Action\s*=\s*\["cloudwatch:DescribeAlarms"\]', deploy_policy)
+    assert re.search(r'Resource\s*=\s*"\*"', deploy_policy)
+    assert '"cloudwatch:*"' not in deploy_policy
+
+    workflow = (ROOT / ".github" / "workflows" / "reusable-deploy-ecs.yml").read_text(
+        encoding="utf-8"
+    )
+    assert re.findall(r"aws cloudwatch ([a-z-]+)", workflow) == ["describe-alarms"]

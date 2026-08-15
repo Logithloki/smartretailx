@@ -295,6 +295,14 @@ resource "aws_iam_role_policy" "gha_deploy" {
         Action   = ["cloudfront:CreateInvalidation"]
         Resource = [aws_cloudfront_distribution.main.arn]
       },
+      # Deployment verification checks whether the service alarm namespace is
+      # currently in ALARM. DescribeAlarms requires wildcard resource scope.
+      {
+        Sid      = "CloudWatchDeploymentVerification"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:DescribeAlarms"]
+        Resource = "*"
+      },
       {
         Sid    = "LambdaVersionPromotion"
         Effect = "Allow"
