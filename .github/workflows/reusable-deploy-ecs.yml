@@ -154,7 +154,7 @@ jobs:
             if [ -n "$log_group" ]; then
               echo "Fetching CloudWatch logs from group '$log_group' stream '$expected_stream'..."
               stream=""
-              for i in {1..5}; do
+              for i in {1..12}; do
                 found=$(aws logs describe-log-streams --log-group-name "$log_group" \
                   --log-stream-name-prefix "$expected_stream" \
                   --query 'logStreams[0].logStreamName' --output text 2>/dev/null || echo "")
@@ -162,7 +162,7 @@ jobs:
                   stream="$found"
                   break
                 fi
-                sleep 2
+                sleep 5
               done
               if [ -n "$stream" ] && [ "$stream" != "None" ]; then
                 echo "--- CLOUDWATCH LOG STREAM OUTPUT ($stream) ---"
