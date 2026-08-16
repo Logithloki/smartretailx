@@ -121,6 +121,8 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
 
     smoke_request = smoke["jobs"]["smoke"]["steps"][1]["run"]
     assert 'ACCESS_TOKEN="${ACCESS_TOKEN#Bearer }"' in smoke_request
+    assert 'ACCESS_TOKEN="${ACCESS_TOKEN#\\\"}"' in smoke_request
+    assert 'ACCESS_TOKEN="${ACCESS_TOKEN%\\\"}"' in smoke_request
     assert 'Authorization: Bearer $ACCESS_TOKEN' in smoke_request
 
     promote_smoke = _workflow("promote.yml")["jobs"]["smoke"]
