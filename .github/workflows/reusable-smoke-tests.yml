@@ -5,8 +5,8 @@ on:
     inputs:
       environment_name: { required: true, type: string }
     secrets:
-      ACCESS_TOKEN:
-        required: false
+      SMOKE_ACCESS_TOKEN:
+        required: true
 
 permissions:
   contents: read
@@ -19,7 +19,7 @@ jobs:
       group: smartretailx-${{ inputs.environment_name }}-smoke
       cancel-in-progress: false
     env:
-      ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      ACCESS_TOKEN: ${{ secrets.SMOKE_ACCESS_TOKEN }}
       FRONTEND_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
       API_BASE_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
       WEBSOCKET_URL: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}

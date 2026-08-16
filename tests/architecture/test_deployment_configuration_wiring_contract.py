@@ -106,11 +106,11 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
     smoke = _workflow("reusable-smoke-tests.yml")
     assert set(_workflow_inputs("reusable-smoke-tests.yml")) == {"environment_name"}
     assert _workflow_secrets("reusable-smoke-tests.yml") == {
-        "ACCESS_TOKEN": {"required": False}
+        "SMOKE_ACCESS_TOKEN": {"required": True}
     }
     assert smoke["jobs"]["smoke"]["environment"] == "${{ inputs.environment_name }}"
     smoke_env = smoke["jobs"]["smoke"]["env"]
-    assert smoke_env["ACCESS_TOKEN"] == "${{ secrets.ACCESS_TOKEN }}"
+    assert smoke_env["ACCESS_TOKEN"] == "${{ secrets.SMOKE_ACCESS_TOKEN }}"
     assert smoke_env["FRONTEND_URL"] == "${{ vars.SMARTRETAILX_PUBLIC_URL }}"
     assert smoke_env["API_BASE_URL"] == "${{ vars.SMARTRETAILX_PUBLIC_URL }}"
     assert smoke_env["WEBSOCKET_URL"] == "${{ vars.SMARTRETAILX_WEBSOCKET_URL }}"
@@ -118,6 +118,12 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
     assert 'echo "ACCESS_TOKEN_PRESENT=true"' in validate
     assert 'echo "ACCESS_TOKEN_PRESENT=false"' in validate
     assert 'echo "$ACCESS_TOKEN"' not in validate
+
+    promote_smoke = _workflow("promote.yml")["jobs"]["smoke"]
+    assert promote_smoke["with"]["environment_name"] == "${{ inputs.environment }}"
+    assert promote_smoke["secrets"] == {
+        "SMOKE_ACCESS_TOKEN": "${{ secrets.SMOKE_ACCESS_TOKEN }}"
+    }
 
     browser = _workflow("reusable-browser-e2e.yml")["jobs"]["e2e"]
     assert set(_workflow_inputs("reusable-browser-e2e.yml")) == {"environment_name"}
@@ -157,7 +163,12 @@ def test_callers_pass_only_release_data_and_the_target_environment_to_reusable_j
             supplied_inputs = set(job.get("with", {}))
             assert supplied_inputs <= expected_inputs, f"{caller_name}:{reusable}"
             assert {"environment_name"} <= supplied_inputs, f"{caller_name}:{reusable}"
-            assert "secrets" not in job, f"{caller_name}:{reusable} must not forward Environment secrets"
+            expected_secrets = (
+                {"SMOKE_ACCESS_TOKEN": "${{ secrets.SMOKE_ACCESS_TOKEN }}"}
+                if (caller_name, reusable) == ("promote.yml", "reusable-smoke-tests.yml")
+                else {}
+            )
+            assert job.get("secrets", {}) == expected_secrets, f"{caller_name}:{reusable}"
             assert "vars.SMARTRETAILX_" not in repr(job.get("with", {})), (
                 f"{caller_name}:{reusable} evaluates an Environment variable too early"
             )
