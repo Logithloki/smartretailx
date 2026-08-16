@@ -43,6 +43,8 @@ jobs:
           # Repository secrets store the raw JWT.  Tolerate a manually saved
           # `Bearer ` prefix without ever logging or decoding the credential.
           ACCESS_TOKEN="${ACCESS_TOKEN#Bearer }"
+          ACCESS_TOKEN="${ACCESS_TOKEN#\"}"
+          ACCESS_TOKEN="${ACCESS_TOKEN%\"}"
           mkdir -p evidence
           curl --fail --silent --show-error "$FRONTEND_URL/" > /dev/null
           products=$(curl --fail --silent --show-error \
