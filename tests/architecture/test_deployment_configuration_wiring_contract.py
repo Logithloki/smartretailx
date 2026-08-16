@@ -119,6 +119,10 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
     assert 'echo "ACCESS_TOKEN_PRESENT=false"' in validate
     assert 'echo "$ACCESS_TOKEN"' not in validate
 
+    smoke_request = smoke["jobs"]["smoke"]["steps"][1]["run"]
+    assert 'ACCESS_TOKEN="${ACCESS_TOKEN#Bearer }"' in smoke_request
+    assert 'Authorization: Bearer $ACCESS_TOKEN' in smoke_request
+
     promote_smoke = _workflow("promote.yml")["jobs"]["smoke"]
     assert promote_smoke["with"]["environment_name"] == "${{ inputs.environment }}"
     assert promote_smoke["secrets"] == {
