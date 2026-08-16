@@ -54,6 +54,7 @@ locals {
     "${var.project_name}-notification",
     "${var.project_name}-stock-reconciliation",
     "${var.project_name}-order-outbox-publisher",
+    "${var.project_name}-ws-authorizer",
     "${var.project_name}-ws-connect",
     "${var.project_name}-ws-disconnect",
     "${var.project_name}-ws-push",
