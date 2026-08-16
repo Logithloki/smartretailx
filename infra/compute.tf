@@ -2,12 +2,15 @@
 # force_delete so the Week-7 destroy/apply DR drill completes on
 # non-empty repos (adversarial-review amendment).
 resource "aws_ecr_repository" "services" {
-  for_each = toset([
+  # The baseline release registry is shared by isolated runtime environments.
+  # ECR digests are repository-scoped, so Test/Staging must consume these
+  # original repositories rather than creating empty environment copies.
+  for_each = var.environment_name == "baseline" ? toset([
     "order-service",
     "inventory-service",
     "user-service",
     "product-service"
-  ])
+  ]) : toset([])
 
   name                 = "${var.project_name}/${each.key}"
   image_tag_mutability = "IMMUTABLE"
@@ -337,9 +340,9 @@ resource "aws_ecs_task_definition" "services" {
     {
       name = "${each.key}-service"
       image = lookup(var.service_image_digests, each.key, "") != "" ? (
-        "${aws_ecr_repository.services["${each.key}-service"].repository_url}@${var.service_image_digests[each.key]}"
+        "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/smartretailx/${each.key}-service@${var.service_image_digests[each.key]}"
         ) : (
-        "${aws_ecr_repository.services["${each.key}-service"].repository_url}:${var.image_tag}"
+        "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/smartretailx/${each.key}-service:${var.image_tag}"
       )
       essential = true
 

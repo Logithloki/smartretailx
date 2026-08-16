@@ -6,7 +6,7 @@ on:
       service:
         required: true
         type: string
-      image_digest:
+      image_reference:
         required: true
         type: string
       environment_name:
@@ -65,11 +65,15 @@ jobs:
       - name: Render an exact digest task definition revision
         shell: bash
         run: |
+          set -euo pipefail
           aws ecs describe-task-definition \
             --task-definition '${{ steps.current.outputs.task_definition }}' \
             --query taskDefinition > current-task-definition.json
-          account=$(aws sts get-caller-identity --query Account --output text)
-          image="$account.dkr.ecr.eu-west-1.amazonaws.com/$PROJECT_NAME/${{ inputs.service }}-service@${{ inputs.image_digest }}"
+          image="${{ inputs.image_reference }}"
+          [[ "$image" =~ ^[0-9]+\.dkr\.ecr\.eu-west-1\.amazonaws\.com/smartretailx/${{ inputs.service }}-service@sha256:[0-9a-f]{64}$ ]] || {
+            echo "Image reference must be the selected central immutable release artifact."
+            exit 1
+          }
           jq --arg container '${{ inputs.service }}-service' --arg image "$image" '
             {
               family,

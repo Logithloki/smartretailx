@@ -5,7 +5,7 @@ administrator UI.
 
 ## Authentication
 
-The browser uses Cognito Managed Login/Hosted UI through
+The browser uses Cognito Hosted UI (classic) through
 `react-oidc-context` and `oidc-client-ts`:
 
 1. the user is redirected to Cognito;

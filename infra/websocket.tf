@@ -289,6 +289,10 @@ resource "aws_cloudwatch_log_group" "ws_access" {
 # `aws apigateway get-account` before touching it.
 
 resource "aws_iam_role" "api_gateway_cloudwatch" {
+  # The API Gateway account CloudWatch role is account-global; baseline owns
+  # it and isolated environments reuse that existing account setting.
+  count = var.environment_name == "baseline" ? 1 : 0
+
   name = "${var.project_name}-apigw-cloudwatch"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -301,10 +305,27 @@ resource "aws_iam_role" "api_gateway_cloudwatch" {
 }
 
 resource "aws_iam_role_policy_attachment" "api_gateway_cloudwatch" {
-  role       = aws_iam_role.api_gateway_cloudwatch.name
+  count      = var.environment_name == "baseline" ? 1 : 0
+  role       = aws_iam_role.api_gateway_cloudwatch[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
 }
 
 resource "aws_api_gateway_account" "main" {
-  cloudwatch_role_arn = aws_iam_role.api_gateway_cloudwatch.arn
+  count               = var.environment_name == "baseline" ? 1 : 0
+  cloudwatch_role_arn = aws_iam_role.api_gateway_cloudwatch[0].arn
+}
+
+moved {
+  from = aws_iam_role.api_gateway_cloudwatch
+  to   = aws_iam_role.api_gateway_cloudwatch[0]
+}
+
+moved {
+  from = aws_iam_role_policy_attachment.api_gateway_cloudwatch
+  to   = aws_iam_role_policy_attachment.api_gateway_cloudwatch[0]
+}
+
+moved {
+  from = aws_api_gateway_account.main
+  to   = aws_api_gateway_account.main[0]
 }

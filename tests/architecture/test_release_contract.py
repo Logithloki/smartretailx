@@ -19,9 +19,11 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         self.assertIn('${{ inputs.project_name }}/${{ inputs.service }}-service', build)
         self.assertIn('name                 = "${var.project_name}/${each.key}"', terraform)
 
-    def test_deployment_registers_digest_task_revision_and_waits(self):
+    def test_deployment_registers_complete_immutable_image_revision_and_waits(self):
         deploy = (WORKFLOWS / "reusable-deploy-ecs.yml").read_text(encoding="utf-8")
-        self.assertIn("@${{ inputs.image_digest }}", deploy)
+        self.assertIn("image_reference", deploy)
+        self.assertIn('image="${{ inputs.image_reference }}"', deploy)
+        self.assertNotIn('amazonaws.com/$PROJECT_NAME/${{ inputs.service }}-service@', deploy)
         self.assertIn("register-task-definition", deploy)
         self.assertNotIn("ecs wait services-stable", deploy)
         self.assertIn("for attempt in {1..60}", deploy)
@@ -36,15 +38,27 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         self.assertIn('^sha256:[0-9a-f]{64}$', variables)
         self.assertIn("@${var.service_image_digests[each.key]}", compute)
 
-    def test_release_manifest_records_all_four_service_digests(self):
+    def test_release_manifest_records_complete_image_references(self):
         release = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
         for field in (
-            "order_service_digest",
-            "inventory_service_digest",
-            "product_service_digest",
-            "user_service_digest",
+            "order_service_image",
+            "inventory_service_image",
+            "product_service_image",
+            "user_service_image",
         ):
             self.assertIn(field, release)
+
+    def test_nonbaseline_environment_does_not_own_application_ecr_repositories(self):
+        compute = (ROOT / "infra" / "compute.tf").read_text(encoding="utf-8")
+        self.assertIn('var.environment_name == "baseline"', compute)
+
+    def test_nonbaseline_environment_reuses_account_global_oidc_and_api_gateway_settings(self):
+        oidc = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")
+        websocket = (ROOT / "infra" / "websocket.tf").read_text(encoding="utf-8")
+        self.assertIn('count = var.environment_name == "baseline" ? 1 : 0', oidc)
+        self.assertIn('data "aws_iam_openid_connect_provider" "github"', oidc)
+        self.assertIn('count = var.environment_name == "baseline" ? 1 : 0', websocket)
+        self.assertIn('from = aws_api_gateway_account.main', websocket)
 
     def test_reusable_deploy_ecs_uses_allowlist_rather_than_denylist(self):
         deploy = (WORKFLOWS / "reusable-deploy-ecs.yml").read_text(encoding="utf-8")

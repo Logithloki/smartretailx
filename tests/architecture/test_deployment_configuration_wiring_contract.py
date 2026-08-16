@@ -44,7 +44,7 @@ def test_reusable_deployments_resolve_environment_settings_inside_bound_jobs() -
     """A caller cannot read an Environment before its reusable job attaches it."""
     expected = {
         "reusable-deploy-ecs.yml": {
-            "inputs": {"service", "image_digest", "environment_name", "run_migration"},
+            "inputs": {"service", "image_reference", "environment_name", "run_migration"},
             "variables": {
                 "DEPLOY_ROLE_ARN": "${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}",
                 "PROJECT_NAME": "${{ vars.SMARTRETAILX_PROJECT_NAME }}",
@@ -149,7 +149,7 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
 def test_callers_pass_only_release_data_and_the_target_environment_to_reusable_jobs() -> None:
     """No caller evaluates Environment variables or secrets before a child job binds it."""
     allowed_inputs = {
-        "reusable-deploy-ecs.yml": {"service", "image_digest", "environment_name", "run_migration"},
+        "reusable-deploy-ecs.yml": {"service", "image_reference", "environment_name", "run_migration"},
         "reusable-deploy-lambda.yml": {
             "component",
             "function_suffix",

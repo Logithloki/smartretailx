@@ -27,6 +27,10 @@ jobs:
       inventory_digest: ${{ steps.release.outputs.inventory_digest }}
       product_digest: ${{ steps.release.outputs.product_digest }}
       user_digest: ${{ steps.release.outputs.user_digest }}
+      order_image: ${{ steps.release.outputs.order_image }}
+      inventory_image: ${{ steps.release.outputs.inventory_image }}
+      product_image: ${{ steps.release.outputs.product_image }}
+      user_image: ${{ steps.release.outputs.user_image }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -38,10 +42,13 @@ jobs:
         shell: bash
         run: |
           jq -e '([.order_service_digest,.inventory_service_digest,.product_service_digest,.user_service_digest]
-            | all(test("^sha256:[0-9a-f]{64}$")))' release/release-manifest.json >/dev/null
+            | all(test("^sha256:[0-9a-f]{64}$"))) and
+            ([.order_service_image,.inventory_service_image,.product_service_image,.user_service_image]
+            | all(test("^[0-9]+\\.dkr\\.ecr\\.eu-west-1\\.amazonaws\\.com/smartretailx/(order|inventory|product|user)-service@sha256:[0-9a-f]{64}$")))' release/release-manifest.json >/dev/null
           echo "release_id=$(jq -r .release_id release/release-manifest.json)" >> "$GITHUB_OUTPUT"
           for service in order inventory product user; do
             echo "${service}_digest=$(jq -r ".${service}_service_digest" release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+            echo "${service}_image=$(jq -r ".${service}_service_image" release/release-manifest.json)" >> "$GITHUB_OUTPUT"
           done
 
   plan:
@@ -158,14 +165,14 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { service: order, digest_output: order_digest, migrate: false }
-          - { service: inventory, digest_output: inventory_digest, migrate: true }
-          - { service: product, digest_output: product_digest, migrate: false }
-          - { service: user, digest_output: user_digest, migrate: false }
+          - { service: order, image_output: order_image, migrate: false }
+          - { service: inventory, image_output: inventory_image, migrate: true }
+          - { service: product, image_output: product_image, migrate: false }
+          - { service: user, image_output: user_image, migrate: false }
     uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: ${{ matrix.service }}
-      image_digest: ${{ needs.release.outputs[matrix.digest_output] }}
+      image_reference: ${{ needs.release.outputs[matrix.image_output] }}
       environment_name: production
       run_migration: ${{ matrix.migrate }}
 

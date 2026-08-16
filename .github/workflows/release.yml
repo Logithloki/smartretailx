@@ -108,9 +108,13 @@ jobs:
       - name: Generate release manifest
         env:
           ORDER_DIGEST: ${{ needs.build-order.outputs.digest }}
+          ORDER_IMAGE: ${{ needs.build-order.outputs.image_reference }}
           INVENTORY_DIGEST: ${{ needs.build-inventory.outputs.digest }}
+          INVENTORY_IMAGE: ${{ needs.build-inventory.outputs.image_reference }}
           PRODUCT_DIGEST: ${{ needs.build-product.outputs.digest }}
+          PRODUCT_IMAGE: ${{ needs.build-product.outputs.image_reference }}
           USER_DIGEST: ${{ needs.build-user.outputs.digest }}
+          USER_IMAGE: ${{ needs.build-user.outputs.image_reference }}
         shell: bash
         run: |
           release_id="${GITHUB_SHA:0:12}-${GITHUB_RUN_NUMBER}"
@@ -121,15 +125,19 @@ jobs:
             --arg git_sha "$GITHUB_SHA" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg order_service_digest "$ORDER_DIGEST" \
+            --arg order_service_image "$ORDER_IMAGE" \
             --arg inventory_service_digest "$INVENTORY_DIGEST" \
+            --arg inventory_service_image "$INVENTORY_IMAGE" \
             --arg product_service_digest "$PRODUCT_DIGEST" \
+            --arg product_service_image "$PRODUCT_IMAGE" \
             --arg user_service_digest "$USER_DIGEST" \
+            --arg user_service_image "$USER_IMAGE" \
             --arg spa_checksum "$spa_checksum" \
             --arg source_workflow "$GITHUB_WORKFLOW" \
             --arg source_run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --arg terraform_version "1.9.5" \
             --argjson lambda_artifact_checksums "$lambda_checksums" \
-            '{release_id:$release_id,git_sha:$git_sha,created_at:$created_at,order_service_digest:$order_service_digest,inventory_service_digest:$inventory_service_digest,product_service_digest:$product_service_digest,user_service_digest:$user_service_digest,lambda_artifact_checksums:$lambda_artifact_checksums,lambda_versions:{},spa_checksum:$spa_checksum,source_workflow:$source_workflow,source_run:$source_run,terraform_version:$terraform_version,environments:{}}' \
+            '{release_id:$release_id,git_sha:$git_sha,created_at:$created_at,order_service_digest:$order_service_digest,order_service_image:$order_service_image,inventory_service_digest:$inventory_service_digest,inventory_service_image:$inventory_service_image,product_service_digest:$product_service_digest,product_service_image:$product_service_image,user_service_digest:$user_service_digest,user_service_image:$user_service_image,lambda_artifact_checksums:$lambda_artifact_checksums,lambda_versions:{},spa_checksum:$spa_checksum,source_workflow:$source_workflow,source_run:$source_run,terraform_version:$terraform_version,environments:{}}' \
             > release-manifest.json
           jq -e '.order_service_digest | startswith("sha256:")' release-manifest.json
       - uses: actions/upload-artifact@v4
@@ -143,7 +151,7 @@ jobs:
     uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: order
-      image_digest: ${{ needs.build-order.outputs.digest }}
+      image_reference: ${{ needs.build-order.outputs.image_reference }}
       environment_name: development
 
   deploy-baseline-inventory:
@@ -152,7 +160,7 @@ jobs:
     uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: inventory
-      image_digest: ${{ needs.build-inventory.outputs.digest }}
+      image_reference: ${{ needs.build-inventory.outputs.image_reference }}
       environment_name: development
       run_migration: true
 
@@ -162,7 +170,7 @@ jobs:
     uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: product
-      image_digest: ${{ needs.build-product.outputs.digest }}
+      image_reference: ${{ needs.build-product.outputs.image_reference }}
       environment_name: development
 
   deploy-baseline-user:
@@ -171,5 +179,5 @@ jobs:
     uses: ./.github/workflows/reusable-deploy-ecs.yml
     with:
       service: user
-      image_digest: ${{ needs.build-user.outputs.digest }}
+      image_reference: ${{ needs.build-user.outputs.image_reference }}
       environment_name: development
