@@ -183,8 +183,14 @@ jobs:
       - name: Wait for stable state and detect circuit-breaker rollback
         shell: bash
         run: |
+          # The AWS CLI default stable-service waiter lasts roughly five minutes.
+          # A replacement target can become healthy at the edge of that window,
+          # which leaves ECS completed but the workflow failed. Keep the wait
+          # bounded, while allowing enough time for registration and ALB checks.
           aws ecs wait services-stable --cluster "$ECS_CLUSTER_NAME" \
-            --services "$PROJECT_NAME-${{ inputs.service }}-service"
+            --services "$PROJECT_NAME-${{ inputs.service }}-service" \
+            --cli-waiter-delay 15 \
+            --cli-waiter-max-attempts 60
           service_details=$(aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" \
             --services "$PROJECT_NAME-${{ inputs.service }}-service" --output json)
           primary=$(jq -r '.services[0].deployments[] | select(.status == "PRIMARY")' <<<"$service_details")
