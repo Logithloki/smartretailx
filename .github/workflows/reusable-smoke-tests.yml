@@ -4,6 +4,9 @@ on:
   workflow_call:
     inputs:
       environment_name: { required: true, type: string }
+    secrets:
+      ACCESS_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -25,6 +28,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -z "${ACCESS_TOKEN:-}" ]]; then
+            echo "ACCESS_TOKEN_PRESENT=false"
+            exit 1
+          fi
+          echo "ACCESS_TOKEN_PRESENT=true"
           for setting in ACCESS_TOKEN FRONTEND_URL API_BASE_URL WEBSOCKET_URL; do
             [[ -n "${!setting:-}" ]] || { echo "Missing required Environment setting: $setting"; exit 1; }
           done

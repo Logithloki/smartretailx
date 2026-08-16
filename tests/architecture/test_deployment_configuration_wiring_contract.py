@@ -25,6 +25,12 @@ def _workflow_inputs(name: str) -> dict:
     return trigger["workflow_call"]["inputs"]
 
 
+def _workflow_secrets(name: str) -> dict:
+    workflow = _workflow(name)
+    trigger = workflow.get(True, workflow.get("on", {}))
+    return trigger["workflow_call"].get("secrets", {})
+
+
 def _deployment_jobs(callee: str) -> list[tuple[str, dict]]:
     return [
         (caller_name, job)
@@ -99,12 +105,19 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
     """Smoke, browser and API checks consume the Environment bound by their own jobs."""
     smoke = _workflow("reusable-smoke-tests.yml")
     assert set(_workflow_inputs("reusable-smoke-tests.yml")) == {"environment_name"}
+    assert _workflow_secrets("reusable-smoke-tests.yml") == {
+        "ACCESS_TOKEN": {"required": False}
+    }
     assert smoke["jobs"]["smoke"]["environment"] == "${{ inputs.environment_name }}"
     smoke_env = smoke["jobs"]["smoke"]["env"]
     assert smoke_env["ACCESS_TOKEN"] == "${{ secrets.ACCESS_TOKEN }}"
     assert smoke_env["FRONTEND_URL"] == "${{ vars.SMARTRETAILX_PUBLIC_URL }}"
     assert smoke_env["API_BASE_URL"] == "${{ vars.SMARTRETAILX_PUBLIC_URL }}"
     assert smoke_env["WEBSOCKET_URL"] == "${{ vars.SMARTRETAILX_WEBSOCKET_URL }}"
+    validate = smoke["jobs"]["smoke"]["steps"][0]["run"]
+    assert 'echo "ACCESS_TOKEN_PRESENT=true"' in validate
+    assert 'echo "ACCESS_TOKEN_PRESENT=false"' in validate
+    assert 'echo "$ACCESS_TOKEN"' not in validate
 
     browser = _workflow("reusable-browser-e2e.yml")["jobs"]["e2e"]
     assert set(_workflow_inputs("reusable-browser-e2e.yml")) == {"environment_name"}
