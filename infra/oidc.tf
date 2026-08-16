@@ -20,6 +20,10 @@
 # retains that value when the argument is removed, so declaring the retained
 # value prevents perpetual drift without recreating the OIDC provider.
 resource "aws_iam_openid_connect_provider" "github" {
+  # IAM OIDC providers are account-global. Baseline owns this singleton;
+  # isolated runtime stacks reference it instead of attempting a duplicate.
+  count = var.environment_name == "baseline" ? 1 : 0
+
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = ["ab9d0263244dd0326eb67015705a667e79cfe998"]
@@ -46,6 +50,9 @@ resource "aws_iam_openid_connect_provider" "github" {
 #      the authoritative deployment gate, including for production.
 locals {
   github_deploy_environment = var.environment_name == "baseline" ? "development" : var.environment_name
+  github_oidc_provider_arn = var.environment_name == "baseline" ? (
+    aws_iam_openid_connect_provider.github[0].arn
+  ) : data.aws_iam_openid_connect_provider.github[0].arn
 
   # The deploy role only needs the predictable names of the Lambda functions
   # that CI promotes. Keep these as strings so the IAM policy does not depend
@@ -61,6 +68,16 @@ locals {
   ]
 }
 
+data "aws_iam_openid_connect_provider" "github" {
+  count = var.environment_name == "baseline" ? 0 : 1
+  arn   = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+}
+
+moved {
+  from = aws_iam_openid_connect_provider.github
+  to   = aws_iam_openid_connect_provider.github[0]
+}
+
 resource "aws_iam_role" "gha_deploy" {
   name = "${var.project_name}-gha-deploy"
 
@@ -68,7 +85,7 @@ resource "aws_iam_role" "gha_deploy" {
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+      Principal = { Federated = local.github_oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
@@ -96,7 +113,7 @@ resource "aws_iam_role" "gha_release" {
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+      Principal = { Federated = local.github_oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
@@ -156,7 +173,7 @@ resource "aws_iam_role" "gha_terraform_plan" {
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+      Principal = { Federated = local.github_oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {

@@ -62,16 +62,16 @@ def test_trivy_scans_the_arm64_image_variant_produced_by_the_release_build() -> 
         assert step["env"] == {"TRIVY_PLATFORM": "linux/arm64"}
 
 
-def test_release_manifest_serializes_service_digests_from_the_build_outputs() -> None:
-    """A release manifest must retain the immutable digest strings passed through --arg."""
+def test_release_manifest_serializes_complete_service_images_from_build_outputs() -> None:
+    """A release manifest must retain repository-scoped immutable references."""
     manifest = _manifest_step()
 
     assert (
         "'{release_id:$release_id,git_sha:$git_sha,created_at:$created_at,"
-        "order_service_digest:$order_service_digest,"
-        "inventory_service_digest:$inventory_service_digest,"
-        "product_service_digest:$product_service_digest,"
-        "user_service_digest:$user_service_digest,"
+        "order_service_digest:$order_service_digest,order_service_image:$order_service_image,"
+        "inventory_service_digest:$inventory_service_digest,inventory_service_image:$inventory_service_image,"
+        "product_service_digest:$product_service_digest,product_service_image:$product_service_image,"
+        "user_service_digest:$user_service_digest,user_service_image:$user_service_image,"
         "lambda_artifact_checksums:$lambda_artifact_checksums,lambda_versions:{},"
         "spa_checksum:$spa_checksum,source_workflow:$source_workflow,"
         "source_run:$source_run,terraform_version:$terraform_version,environments:{}}'"
