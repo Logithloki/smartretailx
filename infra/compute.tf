@@ -338,7 +338,7 @@ resource "aws_ecs_task_definition" "services" {
 
   container_definitions = jsonencode([
     {
-      name = "${each.key}-service"
+      name      = "${each.key}-service"
       image     = lookup(var.service_image_references, each.key, "")
       essential = true
 
