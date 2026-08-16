@@ -183,14 +183,32 @@ jobs:
       - name: Wait for stable state and detect circuit-breaker rollback
         shell: bash
         run: |
-          # The AWS CLI default stable-service waiter lasts roughly five minutes.
-          # A replacement target can become healthy at the edge of that window,
-          # which leaves ECS completed but the workflow failed. Keep the wait
-          # bounded, while allowing enough time for registration and ALB checks.
-          aws ecs wait services-stable --cluster "$ECS_CLUSTER_NAME" \
-            --services "$PROJECT_NAME-${{ inputs.service }}-service" \
-            --cli-waiter-delay 15 \
-            --cli-waiter-max-attempts 60
+          # The runner's AWS CLI does not support waiter delay/attempt overrides.
+          # Poll explicitly for at most 15 minutes so a replacement target that
+          # becomes healthy near the legacy waiter's five-minute limit is valid.
+          for attempt in {1..60}; do
+            service_details=$(aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" \
+              --services "$PROJECT_NAME-${{ inputs.service }}-service" --output json)
+            primary=$(jq -r '.services[0].deployments[] | select(.status == "PRIMARY")' <<<"$service_details")
+            primary_task_definition=$(jq -r .taskDefinition <<<"$primary")
+            rollout_state=$(jq -r .rolloutState <<<"$primary")
+            running=$(jq -r .runningCount <<<"$primary")
+            desired=$(jq -r .desiredCount <<<"$primary")
+
+            if [[ "$primary_task_definition" == '${{ steps.deploy.outputs.task_definition }}' && \
+              "$rollout_state" == "COMPLETED" && "$running" -eq "$desired" ]]; then
+              break
+            fi
+            if [[ "$rollout_state" == "FAILED" ]]; then
+              echo "ECS rollout failed before stability was reached."
+              exit 1
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              echo "ECS rollout did not become stable within 15 minutes."
+              exit 1
+            fi
+            sleep 15
+          done
           service_details=$(aws ecs describe-services --cluster "$ECS_CLUSTER_NAME" \
             --services "$PROJECT_NAME-${{ inputs.service }}-service" --output json)
           primary=$(jq -r '.services[0].deployments[] | select(.status == "PRIMARY")' <<<"$service_details")

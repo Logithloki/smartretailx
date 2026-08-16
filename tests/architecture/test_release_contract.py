@@ -23,9 +23,10 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         deploy = (WORKFLOWS / "reusable-deploy-ecs.yml").read_text(encoding="utf-8")
         self.assertIn("@${{ inputs.image_digest }}", deploy)
         self.assertIn("register-task-definition", deploy)
-        self.assertIn("ecs wait services-stable", deploy)
-        self.assertIn("--cli-waiter-delay 15", deploy)
-        self.assertIn("--cli-waiter-max-attempts 60", deploy)
+        self.assertNotIn("ecs wait services-stable", deploy)
+        self.assertIn("for attempt in {1..60}", deploy)
+        self.assertIn('[[ "$rollout_state" == "FAILED" ]]', deploy)
+        self.assertIn("sleep 15", deploy)
         self.assertIn("rolloutState", deploy)
 
     def test_terraform_accepts_only_sha256_release_digests(self):
