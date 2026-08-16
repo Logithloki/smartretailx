@@ -208,3 +208,27 @@ def test_github_deploy_policy_uses_stable_lambda_names_without_resource_dependen
     assert "local.gha_deploy_lambda_names" in deploy_policy
     assert "local.operational_lambdas" not in deploy_policy
     assert "aws_lambda_function.cognito_auto_confirm" not in deploy_policy
+
+
+def test_github_deploy_lambda_policy_scopes_ws_authorizer_least_privilege() -> None:
+    oidc = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")
+    names = re.search(
+        r"gha_deploy_lambda_names\s*=\s*\[(?P<names>.*?)\]",
+        oidc,
+        flags=re.DOTALL,
+    )
+    assert names, "GHA deploy Lambda name set is missing"
+    assert '"${var.project_name}-ws-authorizer"' in names.group("names")
+
+    deploy_policy = oidc.split('resource "aws_iam_role_policy" "gha_deploy"', 1)[
+        1
+    ].split('output "github_oidc_role_arn"', 1)[0]
+    lambda_promotion = deploy_policy.split('Sid    = "LambdaVersionPromotion"', 1)[
+        1
+    ].split("},", 1)[0]
+
+    assert '"lambda:UpdateFunctionCode"' in lambda_promotion
+    assert '"lambda:*"' not in lambda_promotion
+    assert 'Resource = "*"' not in lambda_promotion
+    assert "function:${function_name}" in lambda_promotion
+    assert "function:${function_name}:*" in lambda_promotion
