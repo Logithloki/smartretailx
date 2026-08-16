@@ -65,17 +65,17 @@ jobs:
         with:
           role-to-assume: ${{ vars.SMARTRETAILX_TERRAFORM_PLAN_ROLE_ARN }}
           aws-region: eu-west-1
-      - name: Materialize immutable image digests
+      - name: Materialize immutable image references
         working-directory: infra
         env:
-          ORDER: ${{ needs.release.outputs.order_digest }}
-          INVENTORY: ${{ needs.release.outputs.inventory_digest }}
-          PRODUCT: ${{ needs.release.outputs.product_digest }}
-          USER: ${{ needs.release.outputs.user_digest }}
+          ORDER: ${{ needs.release.outputs.order_image }}
+          INVENTORY: ${{ needs.release.outputs.inventory_image }}
+          PRODUCT: ${{ needs.release.outputs.product_image }}
+          USER: ${{ needs.release.outputs.user_image }}
         run: |
           jq -n --arg order "$ORDER" --arg inventory "$INVENTORY" \
             --arg product "$PRODUCT" --arg user "$USER" \
-            '{service_image_digests:{order:$order,inventory:$inventory,product:$product,user:$user}}' \
+            '{service_image_references:{order:$order,inventory:$inventory,product:$product,user:$user}}' \
             > release.auto.tfvars.json
       - name: Refuse an empty, isolated, or wrong Terraform state
         working-directory: infra

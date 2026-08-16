@@ -3,6 +3,11 @@ output "vpc_id" {
   value       = aws_vpc.main.id
 }
 
+output "project_name" {
+  description = "Resolved project-name prefix used by automation and GitHub environments"
+  value       = var.project_name
+}
+
 output "public_subnet_ids" {
   description = "Public subnet IDs"
   value       = aws_subnet.public[*].id
@@ -90,6 +95,11 @@ output "cloudfront_domain" {
   value       = aws_cloudfront_distribution.main.domain_name
 }
 
+output "public_url" {
+  description = "Public HTTPS URL for the CloudFront SPA distribution"
+  value       = "https://${aws_cloudfront_distribution.main.domain_name}"
+}
+
 output "cloudfront_distribution_id" {
   description = "CloudFront distribution ID (needed for cache invalidation from CI)"
   value       = aws_cloudfront_distribution.main.id
@@ -149,6 +159,11 @@ output "cognito_issuer" {
 output "cognito_hosted_ui_url" {
   description = "Cognito hosted-UI login URL (SPA authorization-code + PKCE entry point)"
   value       = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com"
+}
+
+output "cognito_domain" {
+  description = "Cognito Hosted UI domain prefix used to construct Hosted UI endpoints"
+  value       = aws_cognito_user_pool_domain.main.domain
 }
 
 output "alb_security_group_id" {
