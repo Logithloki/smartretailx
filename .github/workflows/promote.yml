@@ -119,6 +119,8 @@ jobs:
     uses: ./.github/workflows/reusable-smoke-tests.yml
     with:
       environment_name: ${{ inputs.environment }}
+    secrets:
+      SMOKE_ACCESS_TOKEN: ${{ secrets.SMOKE_ACCESS_TOKEN }}
 
   browser-e2e:
     if: inputs.environment != 'development'
