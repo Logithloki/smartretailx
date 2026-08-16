@@ -100,32 +100,18 @@ variable "cors_allow_origins" {
   default     = ["http://localhost:5173"]
 }
 
-variable "image_tag" {
-  description = "Legacy baseline fallback tag. Formal releases set service_image_digests and deploy repository@sha256 identities."
-  type        = string
-  default     = "v0.2.0"
-}
-
-variable "service_image_digests" {
-  description = "Immutable ECR digests keyed by order, inventory, user, and product. Empty entries retain the preserved baseline tag until its first promoted release."
+variable "service_image_references" {
+  description = "Complete central ECR repository@sha256 references keyed by order, inventory, product, and user. A live stack requires all four."
   type        = map(string)
   default     = {}
 
   validation {
     condition = alltrue([
-      for digest in values(var.service_image_digests) : can(regex("^sha256:[0-9a-f]{64}$", digest))
+      for reference in values(var.service_image_references) : can(regex("^[0-9]+\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com/smartretailx/(order|inventory|product|user)-service@sha256:[0-9a-f]{64}$", reference))
     ])
-    error_message = "Every service image digest must be an exact sha256:<64 lowercase hex> value."
+    error_message = "Every service image reference must be a central smartretailx repository@sha256:<64 lowercase hex> value."
   }
 }
-
-# Why the default matters more than it looks: `make park` runs
-# `terraform apply -var="live=false"` with no image_tag, so the default wins and
-# is written into a fresh task-definition revision. A stale default therefore
-# silently rewrites the deployed tag on every park. That already happened once:
-# v0.2.0 was applied, a park rewrote the task defs back to v0.1.0, and v0.1.0
-# no longer exists in ECR - so the next unpark would have failed its image pull
-# and tripped the deployment circuit breaker.
 
 variable "ses_sender_email" {
   description = "From address for order notifications. Empty disables the SES identity. Set it, apply, then click the verification link AWS emails to that address - SES will not send until you do."

@@ -31,12 +31,16 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         self.assertIn("sleep 15", deploy)
         self.assertIn("rolloutState", deploy)
 
-    def test_terraform_accepts_only_sha256_release_digests(self):
+    def test_live_terraform_requires_complete_digest_pinned_image_references(self):
         variables = (ROOT / "infra" / "variables.tf").read_text(encoding="utf-8")
         compute = (ROOT / "infra" / "compute.tf").read_text(encoding="utf-8")
-        self.assertIn('variable "service_image_digests"', variables)
-        self.assertIn('^sha256:[0-9a-f]{64}$', variables)
-        self.assertIn("@${var.service_image_digests[each.key]}", compute)
+        self.assertIn('variable "service_image_references"', variables)
+        self.assertIn('@sha256:[0-9a-f]{64}$', variables)
+        self.assertIn('lookup(var.service_image_references, each.key, "")', compute)
+        self.assertIn('lifecycle {', compute)
+        self.assertIn('!var.live ||', compute)
+        self.assertNotIn('service:${var.image_tag}', compute)
+        self.assertNotIn('service_image_digests', compute)
 
     def test_release_manifest_records_complete_image_references(self):
         release = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
@@ -51,6 +55,33 @@ class ImmutableReleaseContractTests(unittest.TestCase):
     def test_nonbaseline_environment_does_not_own_application_ecr_repositories(self):
         compute = (ROOT / "infra" / "compute.tf").read_text(encoding="utf-8")
         self.assertIn('var.environment_name == "baseline"', compute)
+
+    def test_noncanonical_environments_consume_but_do_not_manage_shared_ses_identity(self):
+        messaging = (ROOT / "infra" / "messaging.tf").read_text(encoding="utf-8")
+        self.assertIn('var.environment_name == "baseline" && var.ses_sender_email != ""', messaging)
+        self.assertIn('prevent_destroy = true', messaging)
+
+    def test_automation_outputs_are_infrastructure_derived_and_cognito_stays_classic(self):
+        outputs = (ROOT / "infra" / "outputs.tf").read_text(encoding="utf-8")
+        oidc = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")
+        security = (ROOT / "infra" / "security.tf").read_text(encoding="utf-8")
+        self.assertIn('output "project_name"', outputs)
+        self.assertIn('value       = var.project_name', outputs)
+        self.assertIn('output "public_url"', outputs)
+        self.assertIn('aws_cloudfront_distribution.main.domain_name', outputs)
+        self.assertIn('output "cognito_domain"', outputs)
+        self.assertIn('aws_cognito_user_pool_domain.main.domain', outputs)
+        self.assertIn('aws_cognito_user_pool_ui_customization', security)
+        for output in (
+            "ecs_cluster_name",
+            "spa_bucket_name",
+            "cloudfront_distribution_id",
+            "websocket_endpoint",
+            "cognito_issuer",
+            "cognito_app_client_id",
+        ):
+            self.assertIn(f'output "{output}"', outputs)
+        self.assertIn('output "github_oidc_role_arn"', oidc)
 
     def test_nonbaseline_environment_reuses_account_global_oidc_and_api_gateway_settings(self):
         oidc = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")

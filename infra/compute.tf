@@ -339,11 +339,7 @@ resource "aws_ecs_task_definition" "services" {
   container_definitions = jsonencode([
     {
       name = "${each.key}-service"
-      image = lookup(var.service_image_digests, each.key, "") != "" ? (
-        "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/smartretailx/${each.key}-service@${var.service_image_digests[each.key]}"
-        ) : (
-        "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/smartretailx/${each.key}-service:${var.image_tag}"
-      )
+      image     = lookup(var.service_image_references, each.key, "")
       essential = true
 
       portMappings = [{
@@ -419,6 +415,16 @@ resource "aws_ecs_task_definition" "services" {
 
   tags = {
     Name = "${var.project_name}-${each.key}-task"
+  }
+
+  lifecycle {
+    precondition {
+      condition = !var.live || can(regex(
+        "^${data.aws_caller_identity.current.account_id}\\.dkr\\.ecr\\.${var.aws_region}\\.amazonaws\\.com/smartretailx/${each.key}-service@sha256:[0-9a-f]{64}$",
+        lookup(var.service_image_references, each.key, ""),
+      ))
+      error_message = "A live ${each.key} service requires its complete central ECR repository@sha256 image reference; mutable tags and empty images are not permitted."
+    }
   }
 }
 

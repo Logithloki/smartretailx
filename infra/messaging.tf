@@ -48,9 +48,9 @@ resource "aws_sns_topic" "order_confirmed" {
 }
 
 # ─── SES SENDER IDENTITY ──────────────────────────────────────
-# Terraform creates the identity and triggers the verification email; the
-# confirmation link must be clicked in that inbox before SES will send as this
-# address. Nothing here can do that step for you.
+# The baseline root is the canonical Terraform owner. Other environments use
+# the supplied verified address as shared account/region infrastructure and do
+# not import, create, or delete the identity from their own state.
 #
 # The account is in the SES SANDBOX, which means: verified senders only AND
 # verified recipients only, ~200 messages/day, 1/sec. So the customer address
@@ -59,8 +59,12 @@ resource "aws_sns_topic" "order_confirmed" {
 # AWS support ticket and is deliberately out of scope (amendment 21 also keeps
 # k6 away from this path).
 resource "aws_ses_email_identity" "sender" {
-  count = var.ses_sender_email == "" ? 0 : 1
+  count = var.environment_name == "baseline" && var.ses_sender_email != "" ? 1 : 0
   email = var.ses_sender_email
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ─── SAGA COMPENSATION RECEIVER (ADR-06) ──────────────────────
