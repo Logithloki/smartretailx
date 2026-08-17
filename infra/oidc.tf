@@ -353,6 +353,15 @@ resource "aws_iam_role_policy" "gha_deploy" {
           Action   = ["cloudwatch:DescribeAlarms"]
           Resource = "*"
         },
+        # Smoke tests mint an ephemeral Cognito access token at runtime from
+        # Environment-scoped credentials.  It is restricted to this
+        # Terraform-managed pool; the role cannot administer users or pools.
+        {
+          Sid      = "CognitoSmokeAuthentication"
+          Effect   = "Allow"
+          Action   = ["cognito-idp:AdminInitiateAuth"]
+          Resource = [aws_cognito_user_pool.main.arn]
+        },
         {
           Sid    = "LambdaVersionPromotion"
           Effect = "Allow"
