@@ -6,6 +6,7 @@ on:
       environment_name: { required: true, type: string }
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -14,12 +15,35 @@ jobs:
     runs-on: ubuntu-latest
     env:
       API_BASE_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
-      CUSTOMER_TOKEN: ${{ secrets.CUSTOMER_TOKEN }}
-      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+      CUSTOMER_USERNAME: ${{ secrets.CUSTOMER_USERNAME }}
+      CUSTOMER_PASSWORD: ${{ secrets.CUSTOMER_PASSWORD }}
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      COGNITO_AUTHORITY: ${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}
+      COGNITO_CLIENT_ID: ${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Execute authenticated API, RBAC and Saga collection
+      - name: Validate API contracts Environment configuration
+        shell: bash
         run: |
+          set -euo pipefail
+          for setting in API_BASE_URL CUSTOMER_USERNAME CUSTOMER_PASSWORD ADMIN_USERNAME ADMIN_PASSWORD COGNITO_AUTHORITY COGNITO_CLIENT_ID; do
+            [[ -n "${!setting:-}" ]] || { echo "Missing required Environment setting: $setting"; exit 1; }
+          done
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Obtain fresh Cognito customer access token
+        shell: bash
+        run: ./scripts/obtain-cognito-token.sh CUSTOMER
+      - name: Obtain fresh Cognito admin access token
+        shell: bash
+        run: ./scripts/obtain-cognito-token.sh ADMIN
+      - name: Execute authenticated API, RBAC and Saga collection
+        shell: bash
+        run: |
+          set -euo pipefail
           mkdir -p evidence/newman
           npx --yes newman@6.2.1 run postman/SmartRetailX.postman_collection.json \
             -e postman/SmartRetailX.postman_environment.json \
