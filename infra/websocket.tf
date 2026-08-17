@@ -107,12 +107,16 @@ resource "aws_lambda_function" "ws_authorizer" {
   tags = {
     Name = "${var.project_name}-ws-authorizer"
   }
+
+  lifecycle { ignore_changes = [filename, source_code_hash] }
 }
 
 resource "aws_lambda_alias" "ws_authorizer" {
   name             = var.environment_name == "baseline" ? "development" : var.environment_name
   function_name    = aws_lambda_function.ws_authorizer.function_name
   function_version = aws_lambda_function.ws_authorizer.version
+
+  lifecycle { ignore_changes = [function_version] }
 }
 
 resource "aws_cloudwatch_log_group" "ws_authorizer" {
