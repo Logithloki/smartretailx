@@ -142,7 +142,12 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
 
     promote_smoke = _workflow("promote.yml")["jobs"]["smoke"]
     assert promote_smoke["with"]["environment_name"] == "${{ inputs.environment }}"
-    assert promote_smoke.get("secrets", {}) == {}
+    # secrets: inherit is required so the environment-bound reusable job can
+    # read SMOKE_USERNAME / SMOKE_PASSWORD from the GitHub Environment.
+    # Environment vars propagate via the job's environment: binding, but
+    # environment secrets do not reach reusable workflow jobs without
+    # inheritance from the caller.
+    assert promote_smoke.get("secrets") == "inherit"
 
     browser = _workflow("reusable-browser-e2e.yml")["jobs"]["e2e"]
     assert set(_workflow_inputs("reusable-browser-e2e.yml")) == {"environment_name"}
@@ -175,6 +180,13 @@ def test_callers_pass_only_release_data_and_the_target_environment_to_reusable_j
         "reusable-api-tests.yml": {"environment_name"},
     }
 
+    # Reusables that read environment SECRETS from their bound Environment
+    # require secrets: inherit at the caller; environment vars do not.
+    inheriting_reusables = {
+        "reusable-smoke-tests.yml",
+        "reusable-browser-e2e.yml",
+        "reusable-api-tests.yml",
+    }
     for reusable, expected_inputs in allowed_inputs.items():
         jobs = _deployment_jobs(reusable)
         assert jobs, f"{reusable} must have a release caller"
@@ -182,7 +194,10 @@ def test_callers_pass_only_release_data_and_the_target_environment_to_reusable_j
             supplied_inputs = set(job.get("with", {}))
             assert supplied_inputs <= expected_inputs, f"{caller_name}:{reusable}"
             assert {"environment_name"} <= supplied_inputs, f"{caller_name}:{reusable}"
-            assert job.get("secrets", {}) == {}, f"{caller_name}:{reusable}"
+            if reusable in inheriting_reusables:
+                assert job.get("secrets") == "inherit", f"{caller_name}:{reusable}"
+            else:
+                assert job.get("secrets", {}) == {}, f"{caller_name}:{reusable}"
             assert "vars.SMARTRETAILX_" not in repr(job.get("with", {})), (
                 f"{caller_name}:{reusable} evaluates an Environment variable too early"
             )

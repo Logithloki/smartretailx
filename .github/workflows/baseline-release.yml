@@ -226,6 +226,7 @@ jobs:
     uses: ./.github/workflows/reusable-smoke-tests.yml
     with:
       environment_name: development
+    secrets: inherit
 
   automatic_rollback:
     if: >-

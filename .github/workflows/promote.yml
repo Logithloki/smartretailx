@@ -120,6 +120,7 @@ jobs:
     uses: ./.github/workflows/reusable-smoke-tests.yml
     with:
       environment_name: ${{ inputs.environment }}
+    secrets: inherit
 
   browser-e2e:
     if: inputs.environment != 'development'
@@ -127,6 +128,7 @@ jobs:
     uses: ./.github/workflows/reusable-browser-e2e.yml
     with:
       environment_name: ${{ inputs.environment }}
+    secrets: inherit
 
   api-contracts:
     if: inputs.environment != 'development'
@@ -134,3 +136,4 @@ jobs:
     uses: ./.github/workflows/reusable-api-tests.yml
     with:
       environment_name: ${{ inputs.environment }}
+    secrets: inherit
