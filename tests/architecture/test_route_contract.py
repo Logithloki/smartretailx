@@ -56,6 +56,27 @@ class PublicRouteContractTests(unittest.TestCase):
         self.assertIn('"ANY /v1/${svc}/{proxy+}"', source)
         self.assertNotIn('"ANY /api/', source)
 
+    def test_cloudfront_does_not_remap_api_errors_to_spa_fallback(self) -> None:
+        """A distribution-wide custom_error_response would silently rewrite
+        FastAPI 403s (RBAC denials) into 200 /index.html responses and mask
+        real authorization decisions.  SPA client-side routing must instead
+        rely on a viewer-request CloudFront Function on the default (S3)
+        behaviour so /v1/* API responses pass through verbatim."""
+        source = (ROOT / "infra" / "frontend.tf").read_text(encoding="utf-8")
+        self.assertNotIn("custom_error_response", source)
+        self.assertIn("aws_cloudfront_function", source)
+        self.assertIn("spa_router", source)
+        # The function must attach ONLY to the default (S3) behaviour, never
+        # to the /v1/* API behaviour.
+        default_block_start = source.index("default_cache_behavior")
+        v1_block_start = source.index('path_pattern           = "/v1/*"')
+        default_block = source[default_block_start:v1_block_start]
+        v1_block = source[v1_block_start:]
+        self.assertIn("function_association", default_block)
+        # Ensure the /v1/* block does not attach the router function.
+        v1_block_end = v1_block.index("\n  }\n")
+        self.assertNotIn("function_association", v1_block[:v1_block_end])
+
 
 if __name__ == "__main__":
     unittest.main()

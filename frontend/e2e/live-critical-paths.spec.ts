@@ -16,9 +16,12 @@ async function hostedUiLogin(page: Page, account: typeof customer): Promise<void
   }
   await page.goto(baseURL);
   await page.getByRole("button", { name: "Continue to secure sign in" }).click();
-  await page.locator('input[name="username"]').fill(account.username);
-  await page.locator('input[name="password"]').fill(account.password);
-  await page.locator('button[name="signInSubmitButton"], input[name="signInSubmitButton"]').click();
+  // Cognito Hosted UI renders a hidden username input for federated flows
+  // in addition to the visible primary form, so `:visible` disambiguates
+  // without depending on DOM ordering.
+  await page.locator('input[name="username"]:visible').first().fill(account.username);
+  await page.locator('input[name="password"]:visible').first().fill(account.password);
+  await page.locator('button[name="signInSubmitButton"]:visible, input[name="signInSubmitButton"]:visible').first().click();
   await expect(page).toHaveURL(/\/products/);
   await expect(page.getByRole("heading", { name: /Product Catalogue/i })).toBeVisible();
 }
