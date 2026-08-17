@@ -313,11 +313,13 @@ locals {
   }
 }
 
-# ─── TASK DEFINITIONS — ARM64 Graviton (ADR-08, −20% compute) ─
-resource "aws_ecs_task_definition" "services" {
+# Terraform owns this bootstrap family only. Immutable promotion copies this
+# canonical structure into the separate release family and owns all release
+# revisions thereafter.
+resource "aws_ecs_task_definition" "bootstrap_services" {
   for_each = local.services
 
-  family                   = "${var.project_name}-${each.key}"
+  family                   = "${var.project_name}-${each.key}-bootstrap"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   # Bumped to 512 CPU / 1024 memory (from 256 / 512) when the ADOT
@@ -428,6 +430,17 @@ resource "aws_ecs_task_definition" "services" {
   }
 }
 
+# The previous resource represented the same family that promotion owns.
+# Forgetting it is deliberately non-destructive: existing release revisions
+# and any ECS service currently using them remain untouched.
+removed {
+  from = aws_ecs_task_definition.services
+
+  lifecycle {
+    destroy = false
+  }
+}
+
 # ─── ECS SERVICES — desired count gated on `live` ─────────────
 # depends_on the gated egress route so tasks never start before NAT exists
 # on unpark (amendment 22 — otherwise the first image pull fails).
@@ -439,12 +452,12 @@ resource "aws_ecs_service" "services" {
 
   name            = "${var.project_name}-${each.key}-service"
   cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.services[each.key].arn
+  task_definition = aws_ecs_task_definition.bootstrap_services[each.key].arn
   desired_count   = var.live ? var.service_desired_count : 0
   launch_type     = "FARGATE"
 
   lifecycle {
-    ignore_changes = [desired_count]
+    ignore_changes = [desired_count, task_definition]
   }
 
   network_configuration {

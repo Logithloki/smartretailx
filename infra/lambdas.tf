@@ -105,12 +105,16 @@ resource "aws_lambda_function" "order_outbox_publisher" {
   tags = {
     Name = "${var.project_name}-order-outbox-publisher"
   }
+
+  lifecycle { ignore_changes = [filename, source_code_hash] }
 }
 
 resource "aws_lambda_alias" "order_outbox_publisher" {
   name             = var.environment_name == "baseline" ? "development" : var.environment_name
   function_name    = aws_lambda_function.order_outbox_publisher.function_name
   function_version = aws_lambda_function.order_outbox_publisher.version
+
+  lifecycle { ignore_changes = [function_version] }
 }
 
 resource "aws_cloudwatch_log_group" "order_outbox_publisher" {
@@ -183,12 +187,16 @@ resource "aws_lambda_function" "notification" {
   tags = {
     Name = "${var.project_name}-notification"
   }
+
+  lifecycle { ignore_changes = [filename, source_code_hash] }
 }
 
 resource "aws_lambda_alias" "notification" {
   name             = var.environment_name == "baseline" ? "development" : var.environment_name
   function_name    = aws_lambda_function.notification.function_name
   function_version = aws_lambda_function.notification.version
+
+  lifecycle { ignore_changes = [function_version] }
 }
 
 resource "aws_cloudwatch_log_group" "notification" {
@@ -263,12 +271,16 @@ resource "aws_lambda_function" "reconciliation" {
   tags = {
     Name = "${var.project_name}-stock-reconciliation"
   }
+
+  lifecycle { ignore_changes = [filename, source_code_hash] }
 }
 
 resource "aws_lambda_alias" "reconciliation" {
   name             = var.environment_name == "baseline" ? "development" : var.environment_name
   function_name    = aws_lambda_function.reconciliation.function_name
   function_version = aws_lambda_function.reconciliation.version
+
+  lifecycle { ignore_changes = [function_version] }
 }
 
 resource "aws_cloudwatch_log_group" "reconciliation" {
@@ -408,12 +420,16 @@ resource "aws_lambda_function" "ws_connect" {
   tags = {
     Name = "${var.project_name}-ws-connect"
   }
+
+  lifecycle { ignore_changes = [filename, source_code_hash] }
 }
 
 resource "aws_lambda_alias" "ws_connect" {
   name             = var.environment_name == "baseline" ? "development" : var.environment_name
   function_name    = aws_lambda_function.ws_connect.function_name
   function_version = aws_lambda_function.ws_connect.version
+
+  lifecycle { ignore_changes = [function_version] }
 }
 
 resource "aws_cloudwatch_log_group" "ws_connect" {
@@ -472,12 +488,16 @@ resource "aws_lambda_function" "ws_disconnect" {
   tags = {
     Name = "${var.project_name}-ws-disconnect"
   }
+
+  lifecycle { ignore_changes = [filename, source_code_hash] }
 }
 
 resource "aws_lambda_alias" "ws_disconnect" {
   name             = var.environment_name == "baseline" ? "development" : var.environment_name
   function_name    = aws_lambda_function.ws_disconnect.function_name
   function_version = aws_lambda_function.ws_disconnect.version
+
+  lifecycle { ignore_changes = [function_version] }
 }
 
 resource "aws_cloudwatch_log_group" "ws_disconnect" {
@@ -539,12 +559,16 @@ resource "aws_lambda_function" "ws_push" {
   tags = {
     Name = "${var.project_name}-ws-push"
   }
+
+  lifecycle { ignore_changes = [filename, source_code_hash] }
 }
 
 resource "aws_lambda_alias" "ws_push" {
   name             = var.environment_name == "baseline" ? "development" : var.environment_name
   function_name    = aws_lambda_function.ws_push.function_name
   function_version = aws_lambda_function.ws_push.version
+
+  lifecycle { ignore_changes = [function_version] }
 }
 
 resource "aws_cloudwatch_log_group" "ws_push" {

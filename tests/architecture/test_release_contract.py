@@ -30,6 +30,18 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         self.assertIn('[[ "$rollout_state" == "FAILED" ]]', deploy)
         self.assertIn("sleep 15", deploy)
         self.assertIn("rolloutState", deploy)
+        self.assertIn('bootstrap_family="$PROJECT_NAME-${{ inputs.service }}-bootstrap"', deploy)
+        self.assertIn('--task-definition "$bootstrap_family"', deploy)
+        self.assertIn('| .family = $release_family', deploy)
+        self.assertIn('--arg release_family "$release_family"', deploy)
+        self.assertNotIn("steps.current.outputs.task_definition", deploy.split("Render an exact digest", 1)[1].split("Register exact revision", 1)[0])
+
+    def test_every_immutable_lambda_artifact_has_a_promotion_job(self):
+        """Code ownership cannot be moved away from Terraform for an undeployed artifact."""
+        for workflow_name in ("promote.yml", "baseline-release.yml", "production.yml"):
+            workflow = (WORKFLOWS / workflow_name).read_text(encoding="utf-8")
+            self.assertIn("component: order-outbox-publisher", workflow, workflow_name)
+            self.assertIn("suffix: order-outbox-publisher", workflow, workflow_name)
 
     def test_live_terraform_requires_complete_digest_pinned_image_references(self):
         variables = (ROOT / "infra" / "variables.tf").read_text(encoding="utf-8")
