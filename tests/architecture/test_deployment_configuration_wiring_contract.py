@@ -155,13 +155,38 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
     assert browser["env"]["E2E_BASE_URL"] == "${{ vars.SMARTRETAILX_PUBLIC_URL }}"
     assert browser["env"]["E2E_CUSTOMER_USERNAME"] == "${{ secrets.CUSTOMER_USERNAME }}"
 
-    api = _workflow("reusable-api-tests.yml")["jobs"]["newman"]
+    api_workflow = _workflow("reusable-api-tests.yml")
+    api = api_workflow["jobs"]["newman"]
     assert set(_workflow_inputs("reusable-api-tests.yml")) == {"environment_name"}
     assert api["environment"] == "${{ inputs.environment_name }}"
     api_env = api["env"]
     assert api_env["API_BASE_URL"] == "${{ vars.SMARTRETAILX_PUBLIC_URL }}"
-    assert api_env["CUSTOMER_TOKEN"] == "${{ secrets.CUSTOMER_TOKEN }}"
-    assert api_env["ADMIN_TOKEN"] == "${{ secrets.ADMIN_TOKEN }}"
+    # Persistent JWTs are banned; api-tests mints per-role tokens at runtime.
+    assert "CUSTOMER_TOKEN" not in api_env
+    assert "ADMIN_TOKEN" not in api_env
+    assert api_env["CUSTOMER_USERNAME"] == "${{ secrets.CUSTOMER_USERNAME }}"
+    assert api_env["CUSTOMER_PASSWORD"] == "${{ secrets.CUSTOMER_PASSWORD }}"
+    assert api_env["ADMIN_USERNAME"] == "${{ secrets.ADMIN_USERNAME }}"
+    assert api_env["ADMIN_PASSWORD"] == "${{ secrets.ADMIN_PASSWORD }}"
+    assert api_env["COGNITO_AUTHORITY"] == "${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}"
+    assert api_env["COGNITO_CLIENT_ID"] == "${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}"
+    assert api_workflow["permissions"] == {"id-token": "write", "contents": "read"}
+    api_steps = api["steps"]
+    configure = next(step for step in api_steps if "configure-aws-credentials" in step.get("uses", ""))
+    assert configure["with"]["role-to-assume"] == "${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}"
+    customer_mint = next(
+        step for step in api_steps
+        if step.get("name") == "Obtain fresh Cognito customer access token"
+    )
+    admin_mint = next(
+        step for step in api_steps
+        if step.get("name") == "Obtain fresh Cognito admin access token"
+    )
+    assert "./scripts/obtain-cognito-token.sh CUSTOMER" in customer_mint["run"]
+    assert "./scripts/obtain-cognito-token.sh ADMIN" in admin_mint["run"]
+    api_source = (WORKFLOWS / "reusable-api-tests.yml").read_text(encoding="utf-8")
+    assert "secrets.CUSTOMER_TOKEN" not in api_source
+    assert "secrets.ADMIN_TOKEN" not in api_source
 
 
 def test_callers_pass_only_release_data_and_the_target_environment_to_reusable_jobs() -> None:
