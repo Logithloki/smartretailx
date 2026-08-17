@@ -1,0 +1,58 @@
+name: reusable-seed-nonprod-catalog
+
+# Idempotently seeds the canonical synthetic catalogue and matching inventory
+# stock into a non-production environment via the production admin HTTP
+# surface (POST/PUT /v1/products, PATCH /v1/inventory/{id}).
+#
+# Guards:
+#   - Job-level environment binding limits blast radius to the bound target.
+#   - The script itself refuses ENVIRONMENT_NAME not in {test, staging}.
+#   - The promote workflow only invokes this job for test / staging.
+
+on:
+  workflow_call:
+    inputs:
+      environment_name: { required: true, type: string }
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  seed:
+    environment: ${{ inputs.environment_name }}
+    runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT_NAME: ${{ inputs.environment_name }}
+      API_BASE_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      COGNITO_AUTHORITY: ${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}
+      COGNITO_CLIENT_ID: ${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+    steps:
+      - name: Refuse to seed production
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$ENVIRONMENT_NAME" in
+            test|staging) echo "seeding $ENVIRONMENT_NAME" ;;
+            *) echo "REFUSED: seed job must never bind to '$ENVIRONMENT_NAME'"; exit 1 ;;
+          esac
+      - name: Validate seed Environment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for setting in API_BASE_URL COGNITO_AUTHORITY COGNITO_CLIENT_ID ADMIN_USERNAME ADMIN_PASSWORD; do
+            [[ -n "${!setting:-}" ]] || { echo "Missing required Environment setting: $setting"; exit 1; }
+          done
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Obtain fresh Cognito admin access token
+        shell: bash
+        run: ./scripts/obtain-cognito-token.sh ADMIN
+      - name: Idempotent catalogue and stock seed
+        shell: bash
+        run: ./scripts/seed-nonprod-catalog.sh

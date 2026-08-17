@@ -115,8 +115,20 @@ jobs:
       release_id: ${{ needs.release.outputs.release_id }}
       environment_name: ${{ inputs.environment }}
 
-  smoke:
+  seed:
+    if: inputs.environment == 'test' || inputs.environment == 'staging'
     needs: frontend
+    uses: ./.github/workflows/reusable-seed-nonprod.yml
+    with:
+      environment_name: ${{ inputs.environment }}
+    secrets: inherit
+
+  smoke:
+    needs: [frontend, seed]
+    if: >-
+      always() &&
+      needs.frontend.result == 'success' &&
+      (needs.seed.result == 'success' || needs.seed.result == 'skipped')
     uses: ./.github/workflows/reusable-smoke-tests.yml
     with:
       environment_name: ${{ inputs.environment }}
