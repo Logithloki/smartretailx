@@ -73,6 +73,62 @@ def test_github_oidc_preserves_the_aws_retained_legacy_thumbprint(
     assert change["change"]["after"]["thumbprint_list"] == [GITHUB_LEGACY_THUMBPRINT]
 
 
+def test_terraform_keeps_promoted_ecs_release_pointers_out_of_reconciliation() -> None:
+    """A successful immutable promotion, not Terraform, selects an ECS revision."""
+    compute = (INFRA / "compute.tf").read_text(encoding="utf-8")
+
+    service = compute.split('resource "aws_ecs_service" "services" {', 1)[1].split(
+        "\n}", 1
+    )[0]
+    bootstrap_task_definition = compute.split(
+        'resource "aws_ecs_task_definition" "bootstrap_services" {', 1
+    )[1].split("\n}\n\n#", 1)[0]
+
+    assert "ignore_changes = [desired_count, task_definition]" in service
+    assert "aws_ecs_task_definition.bootstrap_services[each.key].arn" in service
+    assert 'family                   = "${var.project_name}-${each.key}-bootstrap"' in bootstrap_task_definition
+    assert 'removed {' in compute
+    assert 'from = aws_ecs_task_definition.services' in compute
+    assert 'destroy = false' in compute
+    assert 'resource "aws_ecs_task_definition" "services"' not in compute
+    assert "ignore_changes = [container_definitions]" not in compute
+
+
+def test_release_managed_lambda_code_and_aliases_do_not_roll_back() -> None:
+    """Terraform retains Lambda structure while promotions select code/version."""
+    source = "\n".join(
+        (INFRA / name).read_text(encoding="utf-8")
+        for name in ("lambdas.tf", "websocket.tf")
+    )
+
+    for function in (
+        "order_outbox_publisher",
+        "notification",
+        "reconciliation",
+        "ws_authorizer",
+        "ws_connect",
+        "ws_disconnect",
+        "ws_push",
+    ):
+        block = source.split(f'resource "aws_lambda_function" "{function}" {{', 1)[1].split(
+            "\n}", 1
+        )[0]
+        alias = source.split(f'resource "aws_lambda_alias" "{function}" {{', 1)[1].split(
+            "\n}", 1
+        )[0]
+        assert "ignore_changes = [filename, source_code_hash]" in block
+        assert "ignore_changes = [function_version]" in alias
+
+
+def test_pipe_and_cognito_normalization_are_explicit_and_convergent() -> None:
+    pipes = (INFRA / "pipes.tf").read_text(encoding="utf-8")
+    security = (INFRA / "security.tf").read_text(encoding="utf-8")
+
+    assert pipes.count("maximum_retry_attempts = 3") == 3
+    assert 'css = replace(<<-EOF' in security
+    assert '"\\r\\n", "\\n"' in security
+
+
 @pytest.mark.parametrize("address", (CLOUDFRONT_ADDRESS, GITHUB_OIDC_ADDRESS))
 def test_post_deployment_resources_have_no_perpetual_diff(
     convergence_changes: dict[str, dict], address: str

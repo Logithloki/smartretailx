@@ -648,7 +648,7 @@ data "archive_file" "cognito_auto_confirm_zip" {
   type        = "zip"
   output_path = "${path.module}/cognito_auto_confirm.zip"
   source {
-    content  = <<EOF
+    content = replace(<<-EOF
 import boto3
 import os
 
@@ -669,6 +669,7 @@ def handler(event, context):
             
     return event
 EOF
+    , "\r\n", "\n")
     filename = "index.py"
   }
 }
@@ -787,7 +788,7 @@ resource "aws_cognito_user_pool_ui_customization" "main" {
   client_id    = aws_cognito_user_pool_client.spa.id
   user_pool_id = aws_cognito_user_pool.main.id
 
-  css = <<EOF
+  css = replace(<<-EOF
 .background-customizable {
   background-color: #fafafa !important;
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
@@ -847,6 +848,7 @@ resource "aws_cognito_user_pool_ui_customization" "main" {
   text-decoration: none !important;
 }
 EOF
+  , "\r\n", "\n")
 }
 
 # RBAC groups. The HTTP API JWT authorizer validates signature/claims only —
