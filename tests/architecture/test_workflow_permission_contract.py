@@ -101,6 +101,28 @@ def test_pr_ci_and_release_keep_their_minimum_explicit_permissions() -> None:
     }
 
 
+def test_secret_scan_uses_a_local_pinned_redacted_git_range_without_write_access() -> None:
+    """Secret scanning must not need GitHub's PR commit-list API."""
+    workflow = _workflow(WORKFLOWS / "pr-ci.yml")
+    assert _permissions(workflow) == {"contents": "read", "pull-requests": "read"}
+
+    steps = workflow["jobs"]["secret-scan"]["steps"]
+    checkout = steps[0]
+    scan = next(step["run"] for step in steps if step.get("name") == "Scan checked-out Git history")
+
+    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["with"]["fetch-depth"] == 0
+    assert "github.event.pull_request.base.sha" in scan
+    assert "github.event.pull_request.head.sha" in scan
+    assert 'git cat-file -e "${BASE_SHA}^{commit}"' in scan
+    assert 'git cat-file -e "${HEAD_SHA}^{commit}"' in scan
+    assert "zricethezav/gitleaks:v8.24.3" in scan
+    assert "git --redact --exit-code 1 --log-opts" in scan
+    assert '--log-opts="$BASE_SHA..$HEAD_SHA"' in scan
+    assert "pulls/" not in scan
+    assert "continue-on-error" not in repr(workflow["jobs"]["secret-scan"])
+
+
 def test_route_and_event_contract_job_installs_its_yaml_parser() -> None:
     """The workflow test module imports yaml before architecture test collection."""
     job = _workflow(WORKFLOWS / "pr-ci.yml")["jobs"]["route-and-event-contracts"]
