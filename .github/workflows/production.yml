@@ -209,6 +209,7 @@ jobs:
     uses: ./.github/workflows/reusable-smoke-tests.yml
     with:
       environment_name: production
+    secrets: inherit
 
   automatic-rollback:
     if: >-
@@ -265,3 +266,4 @@ jobs:
     uses: ./.github/workflows/reusable-browser-e2e.yml
     with:
       environment_name: production
+    secrets: inherit
