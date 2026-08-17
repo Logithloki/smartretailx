@@ -143,6 +143,38 @@ data "aws_cloudfront_response_headers_policy" "security_headers" {
   name = "Managed-SecurityHeadersPolicy"
 }
 
+# ─── SPA client-side routing ─────────────────────────────────
+# CloudFront Function (viewer-request) attached to the DEFAULT behaviour
+# only.  Deep-linked SPA paths (/orders/ord-123, /admin/products, ...)
+# have no matching S3 key, so this function rewrites them to /index.html
+# before the origin is asked.  Requests carrying a filename-looking
+# suffix (`.js`, `.css`, `.png`, ...) or the root `/` are left alone so
+# real static assets are served untouched.  The /v1/* behaviour has its
+# own configuration and is not associated with this function, so API
+# responses reach the caller verbatim.
+resource "aws_cloudfront_function" "spa_router" {
+  name    = "${var.project_name}-spa-router"
+  runtime = "cloudfront-js-1.0"
+  comment = "Serve /index.html for SPA deep links without corrupting API responses"
+  publish = true
+  code    = <<-EOT
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+      if (uri === '/' || uri === '') {
+        return request;
+      }
+      // Any path with a filename extension is a static asset — leave alone.
+      var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
+      if (lastSegment.indexOf('.') !== -1) {
+        return request;
+      }
+      request.uri = '/index.html';
+      return request;
+    }
+  EOT
+}
+
 # ─── The distribution ─────────────────────────────────────────
 resource "aws_cloudfront_distribution" "main" {
   enabled             = true
@@ -182,6 +214,14 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   # ─── Default behaviour: serve the SPA from S3 ───────────────
+  # A viewer-request CloudFront Function rewrites unknown SPA URIs to
+  # /index.html *before* the S3 origin is asked.  This preserves react-
+  # router deep-link support (/orders/ord-123 -> index.html -> client-side
+  # route) without needing distribution-wide error-response remaps.
+  # Distribution-wide 403/404 remaps would corrupt legitimate API
+  # responses: the /v1/* behaviour proxies to API Gateway, and a FastAPI
+  # 403 (e.g. RBAC denial) would otherwise be rewritten to /index.html
+  # with status 200, silently masking real authorization decisions.
   default_cache_behavior {
     target_origin_id       = "spa-s3"
     viewer_protocol_policy = "redirect-to-https"
@@ -192,6 +232,11 @@ resource "aws_cloudfront_distribution" "main" {
     cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
     response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
     compress                   = true
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_router.arn
+    }
   }
 
   # ─── /v1/* behaviour: proxy to the HTTP API, NO caching ─────
@@ -206,23 +251,6 @@ resource "aws_cloudfront_distribution" "main" {
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
     compress                 = true
-  }
-
-  # SPA routing: react-router uses client-side routes. Any deep link
-  # (/orders/ord-123) must serve index.html so the router can pick it up.
-  # 403 is the response OAC returns for a missing key; 404 mirrors the
-  # same fallback if we ever migrate off OAC.
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
   }
 
   viewer_certificate {
