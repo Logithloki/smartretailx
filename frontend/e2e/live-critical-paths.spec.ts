@@ -33,15 +33,20 @@ test.describe("customer critical journey", () => {
     await hostedUiLogin(page, customer);
     await expect(page.locator(".product-card").first()).toBeVisible();
 
-    // The catalogue flow is: Add to cart -> /cart -> Confirm order.  The
-    // /orders/new page still exists but the primary customer journey is
-    // now driven from the cart.
+    // The catalogue flow is: Add to cart -> /cart -> Confirm order ->
+    // in-page "Order confirmed" state -> Track delivery link to /orders.
+    // The cart page does not navigate on its own; it renders a "Track
+    // delivery" button after the Order Service returns.
     await page.getByRole("button", { name: "Add to cart" }).first().click();
     await page.getByRole("link", { name: "Cart" }).click();
     await expect(page.getByRole("heading", { name: /Cart & checkout/i })).toBeVisible();
     await page.getByRole("button", { name: "Confirm order" }).click();
 
-    await expect(page).toHaveURL(/\/orders(\?highlight=|$)/, { timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: /Order confirmed/i })).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole("link", { name: /Track delivery/i }).click();
+    await expect(page).toHaveURL(/\/orders(\?|$)/);
     await expect(page.getByRole("heading", { name: /My Orders/ })).toBeVisible();
     await expect(page.locator("tbody tr").first()).toBeVisible();
     // Terminal status may be CONFIRMED (stock available) or REJECTED
