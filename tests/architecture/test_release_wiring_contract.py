@@ -232,3 +232,42 @@ def test_github_deploy_lambda_policy_scopes_ws_authorizer_least_privilege() -> N
     assert 'Resource = "*"' not in lambda_promotion
     assert "function:${function_name}" in lambda_promotion
     assert "function:${function_name}:*" in lambda_promotion
+
+
+def test_nonbaseline_github_roles_do_not_generate_empty_ecr_resource_lists() -> None:
+    oidc = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")
+
+    release_policy = oidc.split('resource "aws_iam_role_policy" "gha_release"', 1)[
+        1
+    ].split("# Read-only planning", 1)[0]
+    deploy_policy = oidc.split('resource "aws_iam_role_policy" "gha_deploy"', 1)[
+        1
+    ].split('output "github_oidc_role_arn"', 1)[0]
+
+    # Builds publish only to baseline's central repositories. Test and Staging
+    # consume immutable digests, so they must not render an IAM statement whose
+    # resource collection is empty after their local ECR repositories are omitted.
+    assert 'count = var.environment_name == "baseline" ? 1 : 0' in release_policy
+    deploy_ecr = deploy_policy.split("# ─── ECR push", 1)[1].split(
+        "# ─── ECS update-service", 1
+    )[0]
+    assert 'Statement = concat(\n      var.environment_name == "baseline" ? [' in deploy_policy
+    assert 'Resource = [for r in aws_ecr_repository.services : r.arn]' in deploy_ecr
+    assert "] : []," in deploy_ecr
+
+
+def test_all_eventbridge_pipes_wait_for_their_execution_role_policy() -> None:
+    pipes = (ROOT / "infra" / "pipes.tf").read_text(encoding="utf-8")
+
+    for pipe_name in (
+        "order_status",
+        "product_price_refresh",
+        "promotion_price_refresh",
+    ):
+        pipe = re.search(
+            rf'resource "aws_pipes_pipe" "{pipe_name}" \{{(?P<body>.*?)\n\}}',
+            pipes,
+            flags=re.DOTALL,
+        )
+        assert pipe, f"{pipe_name} Pipe is missing"
+        assert "depends_on = [aws_iam_role_policy.pipes]" in pipe.group("body")

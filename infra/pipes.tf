@@ -194,6 +194,8 @@ resource "aws_pipes_pipe" "order_status" {
   source   = aws_dynamodb_table.orders.stream_arn
   target   = aws_cloudwatch_event_bus.orders.arn
 
+  depends_on = [aws_iam_role_policy.pipes]
+
   source_parameters {
     dynamodb_stream_parameters {
       # LATEST: we do not want to replay the entire order history when the
@@ -242,6 +244,8 @@ resource "aws_pipes_pipe" "promotion_price_refresh" {
   source   = aws_dynamodb_table.promotions.stream_arn
   target   = aws_cloudwatch_event_bus.orders.arn
 
+  depends_on = [aws_iam_role_policy.pipes]
+
   source_parameters {
     dynamodb_stream_parameters {
       starting_position = "LATEST"
@@ -281,6 +285,8 @@ resource "aws_pipes_pipe" "product_price_refresh" {
   role_arn = aws_iam_role.pipes.arn
   source   = aws_dynamodb_table.products.stream_arn
   target   = aws_cloudwatch_event_bus.orders.arn
+
+  depends_on = [aws_iam_role_policy.pipes]
 
   source_parameters {
     dynamodb_stream_parameters {

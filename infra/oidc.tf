@@ -131,9 +131,18 @@ resource "aws_iam_role" "gha_release" {
   }
 }
 
+moved {
+  from = aws_iam_role_policy.gha_release
+  to   = aws_iam_role_policy.gha_release[0]
+}
+
+# Builds publish only to the baseline-owned central ECR repositories. Isolated
+# environments consume already-built digest references, so they must not have
+# an ECR publishing policy (and therefore cannot render Resource = []).
 resource "aws_iam_role_policy" "gha_release" {
-  name = "gha-release"
-  role = aws_iam_role.gha_release.id
+  count = var.environment_name == "baseline" ? 1 : 0
+  name  = "gha-release"
+  role  = aws_iam_role.gha_release.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -226,132 +235,136 @@ resource "aws_iam_role_policy" "gha_deploy" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      # ─── ECR push (buildx step) ──────────────────────────────
-      # GetAuthorizationToken must be * per the ECR API contract;
-      # everything else is scoped to the six service repositories.
-      {
-        Sid      = "EcrAuth"
-        Effect   = "Allow"
-        Action   = ["ecr:GetAuthorizationToken"]
-        Resource = "*"
-      },
-      {
-        Sid    = "EcrPush"
-        Effect = "Allow"
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:BatchGetImage",
-          "ecr:CompleteLayerUpload",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:InitiateLayerUpload",
-          "ecr:PutImage",
-          "ecr:UploadLayerPart",
-          "ecr:DescribeRepositories",
-          "ecr:DescribeImages",
-        ]
-        Resource = [for r in aws_ecr_repository.services : r.arn]
-      },
-
-      # ─── ECS update-service (deploy step) ────────────────────
-      # UpdateService + DescribeServices only - no create / delete
-      # (Terraform owns the topology; CI only rolls new task defs).
-      {
-        Sid    = "EcsDeploy"
-        Effect = "Allow"
-        Action = [
-          "ecs:UpdateService",
-          "ecs:DescribeServices",
-          "ecs:DescribeTaskDefinition",
-          "ecs:RegisterTaskDefinition",
-          "ecs:RunTask",
-          "ecs:ListTasks",
-          "ecs:DescribeTasks",
-        ]
-        Resource = "*"
-      },
-      # PassRole is needed so RegisterTaskDefinition can attach the
-      # execution + per-service task roles to the new revision.
-      # Restricted to the exact roles those tasks run under - passing
-      # any IAM role in the account would let a leaked pipeline token
-      # escalate to admin.
-      {
-        Sid    = "EcsPassRoles"
-        Effect = "Allow"
-        Action = ["iam:PassRole"]
-        Resource = [
-          aws_iam_role.ecs_execution.arn,
-          aws_iam_role.order_task.arn,
-          aws_iam_role.inventory_task.arn,
-          aws_iam_role.user_task.arn,
-          aws_iam_role.product_task.arn,
-        ]
-        Condition = {
-          StringEquals = {
-            "iam:PassedToService" = "ecs-tasks.amazonaws.com"
-          }
-        }
-      },
-
-      # ─── S3 sync for the SPA bucket (frontend deploy) ───────
-      # ListBucket at bucket level, object-level actions at /*.
-      {
-        Sid    = "SpaSync"
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket",
-          "s3:GetBucketLocation",
-        ]
-        Resource = [aws_s3_bucket.spa.arn]
-      },
-      {
-        Sid    = "SpaObjects"
-        Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:PutObjectAcl",
-        ]
-        Resource = ["${aws_s3_bucket.spa.arn}/*"]
-      },
-
-      # ─── CloudFront invalidation (post-deploy) ──────────────
-      # CreateInvalidation is the *only* action the pipeline runs;
-      # scoped to the one distribution.
-      {
-        Sid      = "CloudFrontInvalidate"
-        Effect   = "Allow"
-        Action   = ["cloudfront:CreateInvalidation"]
-        Resource = [aws_cloudfront_distribution.main.arn]
-      },
-      # Deployment verification checks whether the service alarm namespace is
-      # currently in ALARM. DescribeAlarms requires wildcard resource scope.
-      {
-        Sid      = "CloudWatchDeploymentVerification"
-        Effect   = "Allow"
-        Action   = ["cloudwatch:DescribeAlarms"]
-        Resource = "*"
-      },
-      {
-        Sid    = "LambdaVersionPromotion"
-        Effect = "Allow"
-        Action = [
-          "lambda:GetAlias",
-          "lambda:CreateAlias",
-          "lambda:UpdateAlias",
-          "lambda:GetFunctionConfiguration",
-          "lambda:UpdateFunctionCode",
-          "lambda:PublishVersion",
-        ]
-        Resource = flatten([
-          for function_name in local.gha_deploy_lambda_names : [
-            "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${function_name}",
-            "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${function_name}:*",
+    Statement = concat(
+      var.environment_name == "baseline" ? [
+        # ─── ECR push (buildx step) ──────────────────────────────
+        # GetAuthorizationToken must be * per the ECR API contract;
+        # repository actions remain scoped to the central repositories.
+        {
+          Sid      = "EcrAuth"
+          Effect   = "Allow"
+          Action   = ["ecr:GetAuthorizationToken"]
+          Resource = "*"
+        },
+        {
+          Sid    = "EcrPush"
+          Effect = "Allow"
+          Action = [
+            "ecr:BatchCheckLayerAvailability",
+            "ecr:BatchGetImage",
+            "ecr:CompleteLayerUpload",
+            "ecr:GetDownloadUrlForLayer",
+            "ecr:InitiateLayerUpload",
+            "ecr:PutImage",
+            "ecr:UploadLayerPart",
+            "ecr:DescribeRepositories",
+            "ecr:DescribeImages",
           ]
-        ])
-      },
-    ]
+          Resource = [for r in aws_ecr_repository.services : r.arn]
+        },
+      ] : [],
+      [
+
+        # ─── ECS update-service (deploy step) ────────────────────
+        # UpdateService + DescribeServices only - no create / delete
+        # (Terraform owns the topology; CI only rolls new task defs).
+        {
+          Sid    = "EcsDeploy"
+          Effect = "Allow"
+          Action = [
+            "ecs:UpdateService",
+            "ecs:DescribeServices",
+            "ecs:DescribeTaskDefinition",
+            "ecs:RegisterTaskDefinition",
+            "ecs:RunTask",
+            "ecs:ListTasks",
+            "ecs:DescribeTasks",
+          ]
+          Resource = "*"
+        },
+        # PassRole is needed so RegisterTaskDefinition can attach the
+        # execution + per-service task roles to the new revision.
+        # Restricted to the exact roles those tasks run under - passing
+        # any IAM role in the account would let a leaked pipeline token
+        # escalate to admin.
+        {
+          Sid    = "EcsPassRoles"
+          Effect = "Allow"
+          Action = ["iam:PassRole"]
+          Resource = [
+            aws_iam_role.ecs_execution.arn,
+            aws_iam_role.order_task.arn,
+            aws_iam_role.inventory_task.arn,
+            aws_iam_role.user_task.arn,
+            aws_iam_role.product_task.arn,
+          ]
+          Condition = {
+            StringEquals = {
+              "iam:PassedToService" = "ecs-tasks.amazonaws.com"
+            }
+          }
+        },
+
+        # ─── S3 sync for the SPA bucket (frontend deploy) ───────
+        # ListBucket at bucket level, object-level actions at /*.
+        {
+          Sid    = "SpaSync"
+          Effect = "Allow"
+          Action = [
+            "s3:ListBucket",
+            "s3:GetBucketLocation",
+          ]
+          Resource = [aws_s3_bucket.spa.arn]
+        },
+        {
+          Sid    = "SpaObjects"
+          Effect = "Allow"
+          Action = [
+            "s3:PutObject",
+            "s3:GetObject",
+            "s3:DeleteObject",
+            "s3:PutObjectAcl",
+          ]
+          Resource = ["${aws_s3_bucket.spa.arn}/*"]
+        },
+
+        # ─── CloudFront invalidation (post-deploy) ──────────────
+        # CreateInvalidation is the *only* action the pipeline runs;
+        # scoped to the one distribution.
+        {
+          Sid      = "CloudFrontInvalidate"
+          Effect   = "Allow"
+          Action   = ["cloudfront:CreateInvalidation"]
+          Resource = [aws_cloudfront_distribution.main.arn]
+        },
+        # Deployment verification checks whether the service alarm namespace is
+        # currently in ALARM. DescribeAlarms requires wildcard resource scope.
+        {
+          Sid      = "CloudWatchDeploymentVerification"
+          Effect   = "Allow"
+          Action   = ["cloudwatch:DescribeAlarms"]
+          Resource = "*"
+        },
+        {
+          Sid    = "LambdaVersionPromotion"
+          Effect = "Allow"
+          Action = [
+            "lambda:GetAlias",
+            "lambda:CreateAlias",
+            "lambda:UpdateAlias",
+            "lambda:GetFunctionConfiguration",
+            "lambda:UpdateFunctionCode",
+            "lambda:PublishVersion",
+          ]
+          Resource = flatten([
+            for function_name in local.gha_deploy_lambda_names : [
+              "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${function_name}",
+              "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${function_name}:*",
+            ]
+          ])
+        },
+      ],
+    )
   })
 }
 
