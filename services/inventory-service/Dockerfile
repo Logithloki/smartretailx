@@ -9,6 +9,7 @@ WORKDIR /app
 
 # psycopg2-binary ships wheels, but libpq is still needed at runtime on slim.
 RUN apt-get update \
+ && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends libpq5 \
  && rm -rf /var/lib/apt/lists/*
 

@@ -56,6 +56,16 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         compute = (ROOT / "infra" / "compute.tf").read_text(encoding="utf-8")
         self.assertIn('var.environment_name == "baseline"', compute)
 
+    def test_service_images_install_available_os_security_fixes_before_release(self):
+        for service in ("order", "inventory", "product", "user"):
+            dockerfile = (
+                ROOT / "services" / f"{service}-service" / "Dockerfile"
+            ).read_text(encoding="utf-8")
+
+            self.assertIn("apt-get update", dockerfile, service)
+            self.assertIn("apt-get upgrade -y", dockerfile, service)
+            self.assertIn("rm -rf /var/lib/apt/lists/*", dockerfile, service)
+
     def test_noncanonical_environments_consume_but_do_not_manage_shared_ses_identity(self):
         messaging = (ROOT / "infra" / "messaging.tf").read_text(encoding="utf-8")
         self.assertIn('var.environment_name == "baseline" && var.ses_sender_email != ""', messaging)
