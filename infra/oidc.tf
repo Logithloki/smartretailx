@@ -66,6 +66,34 @@ locals {
     "${var.project_name}-ws-disconnect",
     "${var.project_name}-ws-push",
   ]
+
+  # Only the baseline build role publishes images. Test and Staging consume
+  # already-built central digest references, so the filtered expression below
+  # emits no ECR statement for those environments.
+  gha_deploy_ecr_statements = [
+    {
+      Sid      = "EcrAuth"
+      Effect   = "Allow"
+      Action   = ["ecr:GetAuthorizationToken"]
+      Resource = ["*"]
+    },
+    {
+      Sid    = "EcrPush"
+      Effect = "Allow"
+      Action = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:CompleteLayerUpload",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+        "ecr:DescribeRepositories",
+        "ecr:DescribeImages",
+      ]
+      Resource = [for repository in aws_ecr_repository.services : repository.arn]
+    },
+  ]
 }
 
 data "aws_iam_openid_connect_provider" "github" {
@@ -236,33 +264,13 @@ resource "aws_iam_role_policy" "gha_deploy" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat(
-      var.environment_name == "baseline" ? [
-        # ─── ECR push (buildx step) ──────────────────────────────
-        # GetAuthorizationToken must be * per the ECR API contract;
-        # repository actions remain scoped to the central repositories.
-        {
-          Sid      = "EcrAuth"
-          Effect   = "Allow"
-          Action   = ["ecr:GetAuthorizationToken"]
-          Resource = "*"
-        },
-        {
-          Sid    = "EcrPush"
-          Effect = "Allow"
-          Action = [
-            "ecr:BatchCheckLayerAvailability",
-            "ecr:BatchGetImage",
-            "ecr:CompleteLayerUpload",
-            "ecr:GetDownloadUrlForLayer",
-            "ecr:InitiateLayerUpload",
-            "ecr:PutImage",
-            "ecr:UploadLayerPart",
-            "ecr:DescribeRepositories",
-            "ecr:DescribeImages",
-          ]
-          Resource = [for r in aws_ecr_repository.services : r.arn]
-        },
-      ] : [],
+      # ECR authentication and push are needed only by baseline's build-once
+      # release role. A filtered expression avoids incompatible conditional
+      # tuple types when Test/Staging have no local ECR repositories.
+      [
+        for statement in local.gha_deploy_ecr_statements : statement
+        if var.environment_name == "baseline"
+      ],
       [
 
         # ─── ECS update-service (deploy step) ────────────────────
