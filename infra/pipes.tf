@@ -201,9 +201,14 @@ resource "aws_pipes_pipe" "order_status" {
       # LATEST: we do not want to replay the entire order history when the
       # pipe is unparked; the WebSocket clients are ephemeral and only care
       # about live transitions.
-      starting_position      = "LATEST"
-      batch_size             = 1
-      maximum_retry_attempts = 3
+      starting_position                  = "LATEST"
+      batch_size                         = 1
+      maximum_retry_attempts             = 3
+      # Explicit values keep the AWS Pipes UpdatePipe validation happy across
+      # every environment; without them the provider sends implicit defaults
+      # that older pipes reject with MaximumBatchingWindow/RecordAge ranges.
+      maximum_batching_window_in_seconds = 1
+      maximum_record_age_in_seconds      = 300
     }
 
     filter_criteria {
@@ -249,9 +254,11 @@ resource "aws_pipes_pipe" "promotion_price_refresh" {
 
   source_parameters {
     dynamodb_stream_parameters {
-      starting_position      = "LATEST"
-      batch_size             = 1
-      maximum_retry_attempts = 3
+      starting_position                  = "LATEST"
+      batch_size                         = 1
+      maximum_retry_attempts             = 3
+      maximum_batching_window_in_seconds = 1
+      maximum_record_age_in_seconds      = 300
     }
 
     filter_criteria {
@@ -292,9 +299,11 @@ resource "aws_pipes_pipe" "product_price_refresh" {
 
   source_parameters {
     dynamodb_stream_parameters {
-      starting_position      = "LATEST"
-      batch_size             = 1
-      maximum_retry_attempts = 3
+      starting_position                  = "LATEST"
+      batch_size                         = 1
+      maximum_retry_attempts             = 3
+      maximum_batching_window_in_seconds = 1
+      maximum_record_age_in_seconds      = 300
     }
 
     filter_criteria {
