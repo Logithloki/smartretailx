@@ -4,11 +4,9 @@ on:
   workflow_call:
     inputs:
       environment_name: { required: true, type: string }
-    secrets:
-      SMOKE_ACCESS_TOKEN:
-        required: true
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -19,32 +17,36 @@ jobs:
       group: smartretailx-${{ inputs.environment_name }}-smoke
       cancel-in-progress: false
     env:
-      ACCESS_TOKEN: ${{ secrets.SMOKE_ACCESS_TOKEN }}
+      SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+      SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
       FRONTEND_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
       API_BASE_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
       WEBSOCKET_URL: ${{ vars.SMARTRETAILX_WEBSOCKET_URL }}
+      COGNITO_AUTHORITY: ${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}
+      COGNITO_CLIENT_ID: ${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}
     steps:
       - name: Validate smoke Environment configuration
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${ACCESS_TOKEN:-}" ]]; then
-            echo "ACCESS_TOKEN_PRESENT=false"
-            exit 1
-          fi
-          echo "ACCESS_TOKEN_PRESENT=true"
-          for setting in ACCESS_TOKEN FRONTEND_URL API_BASE_URL WEBSOCKET_URL; do
+          for setting in SMOKE_USERNAME SMOKE_PASSWORD FRONTEND_URL API_BASE_URL WEBSOCKET_URL COGNITO_AUTHORITY COGNITO_CLIENT_ID; do
             [[ -n "${!setting:-}" ]] || { echo "Missing required Environment setting: $setting"; exit 1; }
           done
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Obtain fresh Cognito smoke access token
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/obtain-smoke-access-token.sh
+          echo "ACCESS_TOKEN_PRESENT=true"
       - name: Frontend, authenticated API, Saga and WebSocket smoke
         shell: bash
         run: |
           set -euo pipefail
-          # Repository secrets store the raw JWT.  Tolerate a manually saved
-          # `Bearer ` prefix without ever logging or decoding the credential.
-          ACCESS_TOKEN="${ACCESS_TOKEN#Bearer }"
-          ACCESS_TOKEN="${ACCESS_TOKEN#\"}"
-          ACCESS_TOKEN="${ACCESS_TOKEN%\"}"
           mkdir -p evidence
           curl --fail --silent --show-error "$FRONTEND_URL/" > /dev/null
           products=$(curl --fail --silent --show-error \

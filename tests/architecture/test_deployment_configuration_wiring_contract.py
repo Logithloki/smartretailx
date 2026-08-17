@@ -105,31 +105,44 @@ def test_smoke_and_contract_jobs_read_selected_environment_variables_and_secrets
     """Smoke, browser and API checks consume the Environment bound by their own jobs."""
     smoke = _workflow("reusable-smoke-tests.yml")
     assert set(_workflow_inputs("reusable-smoke-tests.yml")) == {"environment_name"}
-    assert _workflow_secrets("reusable-smoke-tests.yml") == {
-        "SMOKE_ACCESS_TOKEN": {"required": True}
-    }
+    assert _workflow_secrets("reusable-smoke-tests.yml") == {}
     assert smoke["jobs"]["smoke"]["environment"] == "${{ inputs.environment_name }}"
     smoke_env = smoke["jobs"]["smoke"]["env"]
-    assert smoke_env["ACCESS_TOKEN"] == "${{ secrets.SMOKE_ACCESS_TOKEN }}"
+    assert smoke_env["SMOKE_USERNAME"] == "${{ secrets.SMOKE_USERNAME }}"
+    assert smoke_env["SMOKE_PASSWORD"] == "${{ secrets.SMOKE_PASSWORD }}"
+    assert smoke_env["COGNITO_AUTHORITY"] == "${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}"
+    assert smoke_env["COGNITO_CLIENT_ID"] == "${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}"
+    assert "ACCESS_TOKEN" not in smoke_env
     assert smoke_env["FRONTEND_URL"] == "${{ vars.SMARTRETAILX_PUBLIC_URL }}"
     assert smoke_env["API_BASE_URL"] == "${{ vars.SMARTRETAILX_PUBLIC_URL }}"
     assert smoke_env["WEBSOCKET_URL"] == "${{ vars.SMARTRETAILX_WEBSOCKET_URL }}"
-    validate = smoke["jobs"]["smoke"]["steps"][0]["run"]
-    assert 'echo "ACCESS_TOKEN_PRESENT=true"' in validate
-    assert 'echo "ACCESS_TOKEN_PRESENT=false"' in validate
-    assert 'echo "$ACCESS_TOKEN"' not in validate
 
-    smoke_request = smoke["jobs"]["smoke"]["steps"][1]["run"]
-    assert 'ACCESS_TOKEN="${ACCESS_TOKEN#Bearer }"' in smoke_request
-    assert 'ACCESS_TOKEN="${ACCESS_TOKEN#\\\"}"' in smoke_request
-    assert 'ACCESS_TOKEN="${ACCESS_TOKEN%\\\"}"' in smoke_request
+    assert smoke["permissions"] == {"id-token": "write", "contents": "read"}
+    steps = smoke["jobs"]["smoke"]["steps"]
+    configure = next(step for step in steps if "configure-aws-credentials" in step.get("uses", ""))
+    assert configure["with"]["role-to-assume"] == "${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}"
+    fresh_token = next(
+        step["run"]
+        for step in steps
+        if step.get("name") == "Obtain fresh Cognito smoke access token"
+    )
+    assert "./scripts/obtain-smoke-access-token.sh" in fresh_token
+    assert 'echo "ACCESS_TOKEN_PRESENT=true"' in fresh_token
+    assert 'echo "$ACCESS_TOKEN"' not in fresh_token
+
+    smoke_request = next(
+        step["run"]
+        for step in steps
+        if step.get("name") == "Frontend, authenticated API, Saga and WebSocket smoke"
+    )
     assert 'Authorization: Bearer $ACCESS_TOKEN' in smoke_request
+    assert "SMOKE_ACCESS_TOKEN" not in (WORKFLOWS / "reusable-smoke-tests.yml").read_text(
+        encoding="utf-8"
+    )
 
     promote_smoke = _workflow("promote.yml")["jobs"]["smoke"]
     assert promote_smoke["with"]["environment_name"] == "${{ inputs.environment }}"
-    assert promote_smoke["secrets"] == {
-        "SMOKE_ACCESS_TOKEN": "${{ secrets.SMOKE_ACCESS_TOKEN }}"
-    }
+    assert promote_smoke.get("secrets", {}) == {}
 
     browser = _workflow("reusable-browser-e2e.yml")["jobs"]["e2e"]
     assert set(_workflow_inputs("reusable-browser-e2e.yml")) == {"environment_name"}
@@ -169,12 +182,7 @@ def test_callers_pass_only_release_data_and_the_target_environment_to_reusable_j
             supplied_inputs = set(job.get("with", {}))
             assert supplied_inputs <= expected_inputs, f"{caller_name}:{reusable}"
             assert {"environment_name"} <= supplied_inputs, f"{caller_name}:{reusable}"
-            expected_secrets = (
-                {"SMOKE_ACCESS_TOKEN": "${{ secrets.SMOKE_ACCESS_TOKEN }}"}
-                if (caller_name, reusable) == ("promote.yml", "reusable-smoke-tests.yml")
-                else {}
-            )
-            assert job.get("secrets", {}) == expected_secrets, f"{caller_name}:{reusable}"
+            assert job.get("secrets", {}) == {}, f"{caller_name}:{reusable}"
             assert "vars.SMARTRETAILX_" not in repr(job.get("with", {})), (
                 f"{caller_name}:{reusable} evaluates an Environment variable too early"
             )
@@ -200,3 +208,18 @@ def test_environment_bound_reusables_support_every_promotion_target() -> None:
 
     production_call = _workflow("production.yml")["jobs"]["ecs"]
     assert production_call["with"]["environment_name"] == "production"
+
+
+def test_smoke_uses_a_runtime_token_minted_by_the_environment_deploy_role() -> None:
+    """An expired persisted JWT must not be able to break an authenticated promotion."""
+    smoke_source = (WORKFLOWS / "reusable-smoke-tests.yml").read_text(encoding="utf-8")
+    deploy_policy = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")
+
+    assert "SMOKE_ACCESS_TOKEN" not in smoke_source
+    assert "SMOKE_USERNAME" in smoke_source
+    assert "SMOKE_PASSWORD" in smoke_source
+    assert "admin-initiate-auth" in (ROOT / "scripts" / "obtain-smoke-access-token.sh").read_text(
+        encoding="utf-8"
+    )
+    assert '"cognito-idp:AdminInitiateAuth"' in deploy_policy
+    assert "Resource = [aws_cognito_user_pool.main.arn]" in deploy_policy
