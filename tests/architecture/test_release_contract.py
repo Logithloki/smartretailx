@@ -101,6 +101,35 @@ class ImmutableReleaseContractTests(unittest.TestCase):
         self.assertIn('count = var.environment_name == "baseline" ? 1 : 0', websocket)
         self.assertIn('from = aws_api_gateway_account.main', websocket)
 
+    def test_cloudfront_waf_and_frontend_release_contract(self):
+        """Keep every environment's CloudFront WAF attachment Terraform-managed."""
+        frontend = (ROOT / "infra" / "frontend.tf").read_text(encoding="utf-8")
+        frontend_workflow = (WORKFLOWS / "reusable-deploy-frontend.yml").read_text(
+            encoding="utf-8"
+        )
+
+        distribution = frontend.split(
+            'resource "aws_cloudfront_distribution" "main" {', 1
+        )[1].split('\n}', 1)[0]
+        waf = frontend.split('resource "aws_wafv2_web_acl" "cloudfront" {', 1)[1].split(
+            '\n}', 1
+        )[0]
+
+        self.assertIn('web_acl_id = aws_wafv2_web_acl.cloudfront.arn', distribution)
+        self.assertNotIn('web_acl_id = aws_wafv2_web_acl.cloudfront.id', distribution)
+        self.assertNotIn('web_acl_id = null', distribution)
+        self.assertIn('provider = aws.us_east_1', waf)
+        self.assertIn('scope       = "CLOUDFRONT"', waf)
+        self.assertNotIn('environment_name == "test"', distribution)
+        self.assertNotIn('environment_name == "development"', distribution)
+        self.assertNotIn('environment_name == "production"', distribution)
+
+        self.assertNotIn('aws_s3_object', frontend)
+        self.assertNotIn('aws_s3_bucket_object', frontend)
+        self.assertIn('aws s3 sync dist "s3://$SPA_BUCKET/$prefix/" --delete', frontend_workflow)
+        self.assertIn('aws s3 cp dist/index.html "s3://$SPA_BUCKET/index.html"', frontend_workflow)
+        self.assertIn('aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID"', frontend_workflow)
+
     def test_reusable_deploy_ecs_uses_allowlist_rather_than_denylist(self):
         deploy = (WORKFLOWS / "reusable-deploy-ecs.yml").read_text(encoding="utf-8")
         self.assertNotIn("del(.taskDefinitionArn", deploy)
