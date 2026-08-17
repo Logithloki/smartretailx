@@ -248,12 +248,20 @@ def test_nonbaseline_github_roles_do_not_generate_empty_ecr_resource_lists() -> 
     # consume immutable digests, so they must not render an IAM statement whose
     # resource collection is empty after their local ECR repositories are omitted.
     assert 'count = var.environment_name == "baseline" ? 1 : 0' in release_policy
-    deploy_ecr = deploy_policy.split("# ─── ECR push", 1)[1].split(
-        "# ─── ECS update-service", 1
+    deploy_ecr = oidc.split("gha_deploy_ecr_statements = [", 1)[1].split(
+        "\n  ]\n}", 1
     )[0]
-    assert 'Statement = concat(\n      var.environment_name == "baseline" ? [' in deploy_policy
-    assert 'Resource = [for r in aws_ecr_repository.services : r.arn]' in deploy_ecr
-    assert "] : []," in deploy_ecr
+    assert "gha_deploy_ecr_statements" in oidc
+    assert (
+        "for statement in local.gha_deploy_ecr_statements : statement\n"
+        '        if var.environment_name == "baseline"'
+    ) in deploy_policy
+    assert 'var.environment_name == "baseline" ? [' not in deploy_policy
+    assert 'Resource = ["*"]' in deploy_ecr
+    assert (
+        "Resource = [for repository in aws_ecr_repository.services : repository.arn]"
+        in deploy_ecr
+    )
 
 
 def test_all_eventbridge_pipes_wait_for_their_execution_role_policy() -> None:
