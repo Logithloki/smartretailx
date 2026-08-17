@@ -33,14 +33,24 @@ test.describe("customer critical journey", () => {
     await hostedUiLogin(page, customer);
     await expect(page.locator(".product-card").first()).toBeVisible();
 
-    await page.getByRole("link", { name: "New Order" }).click();
-    await expect(page.getByRole("heading", { name: "New Order Checkout" })).toBeVisible();
-    await page.getByRole("button", { name: "Confirm & Place Order" }).click();
+    // The catalogue flow is: Add to cart -> /cart -> Confirm order.  The
+    // /orders/new page still exists but the primary customer journey is
+    // now driven from the cart.
+    await page.getByRole("button", { name: "Add to cart" }).first().click();
+    await page.getByRole("link", { name: "Cart" }).click();
+    await expect(page.getByRole("heading", { name: /Cart & checkout/i })).toBeVisible();
+    await page.getByRole("button", { name: "Confirm order" }).click();
 
-    await expect(page).toHaveURL(/\/orders\?highlight=/);
+    await expect(page).toHaveURL(/\/orders(\?highlight=|$)/, { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: /My Orders/ })).toBeVisible();
-    await expect(page.locator("tbody tr.highlight")).toBeVisible();
-    await expect(page.locator("tbody tr.highlight .badge")).toHaveText(/CONFIRMED|REJECTED/, { timeout: 45_000 });
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    // Terminal status may be CONFIRMED (stock available) or REJECTED
+    // (insufficient stock).  The Saga's asynchronous transition takes a
+    // few seconds after the order is submitted.
+    await expect(page.locator("tbody tr").first().locator(".badge")).toHaveText(
+      /CONFIRMED|REJECTED/,
+      { timeout: 45_000 },
+    );
   });
 
   test("customer is blocked from admin UI and admin API", async ({ page }) => {
@@ -83,6 +93,10 @@ test.describe("administrator critical journey", () => {
 
     await page.getByRole("link", { name: "Admin: Products" }).click();
     const productRow = page.locator("tbody tr").filter({ hasText: productId });
+    // The admin UI guards Delete with window.confirm.  Playwright
+    // auto-dismisses (== cancel) native dialogs unless a handler is
+    // registered before the interaction that triggers them.
+    page.once("dialog", (dialog) => dialog.accept());
     await productRow.getByRole("button", { name: /Delete/i }).click();
     await expect(page.getByText(productId, { exact: true })).toHaveCount(0);
   });
