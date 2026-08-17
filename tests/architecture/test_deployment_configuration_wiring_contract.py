@@ -200,6 +200,7 @@ def test_callers_pass_only_release_data_and_the_target_environment_to_reusable_j
             "environment_name",
         },
         "reusable-deploy-frontend.yml": {"release_run_id", "release_id", "environment_name"},
+        "reusable-seed-nonprod.yml": {"environment_name"},
         "reusable-smoke-tests.yml": {"environment_name"},
         "reusable-browser-e2e.yml": {"environment_name"},
         "reusable-api-tests.yml": {"environment_name"},
@@ -208,6 +209,7 @@ def test_callers_pass_only_release_data_and_the_target_environment_to_reusable_j
     # Reusables that read environment SECRETS from their bound Environment
     # require secrets: inherit at the caller; environment vars do not.
     inheriting_reusables = {
+        "reusable-seed-nonprod.yml",
         "reusable-smoke-tests.yml",
         "reusable-browser-e2e.yml",
         "reusable-api-tests.yml",
@@ -238,6 +240,7 @@ def test_environment_bound_reusables_support_every_promotion_target() -> None:
         "reusable-deploy-ecs.yml",
         "reusable-deploy-lambda.yml",
         "reusable-deploy-frontend.yml",
+        "reusable-seed-nonprod.yml",
         "reusable-smoke-tests.yml",
         "reusable-browser-e2e.yml",
         "reusable-api-tests.yml",
@@ -263,3 +266,55 @@ def test_smoke_uses_a_runtime_token_minted_by_the_environment_deploy_role() -> N
     )
     assert '"cognito-idp:AdminInitiateAuth"' in deploy_policy
     assert "Resource = [aws_cognito_user_pool.main.arn]" in deploy_policy
+
+
+def test_nonprod_catalogue_seed_is_gated_to_test_and_staging_only() -> None:
+    """The seed job cannot run against production, baseline or development."""
+    promote = _workflow("promote.yml")
+    seed_job = promote["jobs"]["seed"]
+    # Promotion only invokes seed for test / staging.
+    condition = str(seed_job["if"])
+    assert "test" in condition and "staging" in condition
+    for forbidden in ("development", "baseline", "production"):
+        assert forbidden not in condition, (
+            f"seed job condition unexpectedly references '{forbidden}': {condition}"
+        )
+
+    # Smoke waits on both frontend and seed (seed may be skipped when the
+    # target environment is development, but must never be bypassed for test/
+    # staging).
+    smoke_job = promote["jobs"]["smoke"]
+    assert set(smoke_job["needs"]) == {"frontend", "seed"}
+    smoke_condition = str(smoke_job["if"])
+    assert "success" in smoke_condition
+    assert "seed" in smoke_condition
+
+    # The reusable seed workflow declares the environment binding and a
+    # first-step production refusal.
+    reusable = _workflow("reusable-seed-nonprod.yml")
+    seed_reusable = reusable["jobs"]["seed"]
+    assert seed_reusable["environment"] == "${{ inputs.environment_name }}"
+    refuse_step = seed_reusable["steps"][0]
+    refuse_body = refuse_step["run"]
+    assert "test|staging" in refuse_body
+    assert "REFUSED" in refuse_body
+    for forbidden in ("production", "baseline", "development"):
+        assert forbidden not in refuse_body, (
+            f"seed workflow refusal script unexpectedly names '{forbidden}': {refuse_body}"
+        )
+
+    # The seed shell script itself refuses the same set of environments.
+    script = (ROOT / "scripts" / "seed-nonprod-catalog.sh").read_text(encoding="utf-8")
+    assert "test|staging" in script
+    assert "REFUSED" in script
+    assert "exit 2" in script
+
+    # Production and baseline workflows must NOT invoke the seed reusable.
+    production = _workflow("production.yml")
+    for job in production.get("jobs", {}).values():
+        if isinstance(job, dict):
+            assert job.get("uses") != "./.github/workflows/reusable-seed-nonprod.yml"
+    baseline = _workflow("baseline-release.yml")
+    for job in baseline.get("jobs", {}).values():
+        if isinstance(job, dict):
+            assert job.get("uses") != "./.github/workflows/reusable-seed-nonprod.yml"
