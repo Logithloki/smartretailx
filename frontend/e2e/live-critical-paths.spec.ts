@@ -14,14 +14,13 @@ async function hostedUiLogin(page: Page, account: typeof customer): Promise<void
   if (!baseURL || !account.username || !account.password) {
     throw new Error("E2E_BASE_URL and the selected E2E account credentials are required");
   }
+  // PR A migrated the sign-in flow off Cognito Hosted UI onto a
+  // first-party SmartRetailX React form.  Credentials go straight to
+  // Amplify Auth (SRP); no more redirect through the Cognito domain.
   await page.goto(baseURL);
-  await page.getByRole("button", { name: "Continue to secure sign in" }).click();
-  // Cognito Hosted UI renders a hidden username input for federated flows
-  // in addition to the visible primary form, so `:visible` disambiguates
-  // without depending on DOM ordering.
-  await page.locator('input[name="username"]:visible').first().fill(account.username);
-  await page.locator('input[name="password"]:visible').first().fill(account.password);
-  await page.locator('button[name="signInSubmitButton"]:visible, input[name="signInSubmitButton"]:visible').first().click();
+  await page.getByLabel(/^email$/i).fill(account.username);
+  await page.getByLabel(/^password$/i).fill(account.password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
   await expect(page).toHaveURL(/\/products/);
   await expect(page.getByRole("heading", { name: /Product Catalogue/i })).toBeVisible();
 }
