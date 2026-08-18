@@ -209,6 +209,25 @@ nav a.active {
   color: var(--text-primary);
 }
 
+/* Small count pill shown next to the Cart nav link when the local cart
+   has items.  Users had no visual feedback after clicking "Add to cart"
+   until this landed. */
+.cart-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 0.375rem;
+  padding: 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff;
+  background: var(--emerald-600, #059669);
+  border-radius: var(--radius-full);
+}
+
 /* Main Container */
 .app-main {
   flex: 1;
