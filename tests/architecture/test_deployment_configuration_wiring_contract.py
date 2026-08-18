@@ -318,3 +318,45 @@ def test_nonprod_catalogue_seed_is_gated_to_test_and_staging_only() -> None:
     for job in baseline.get("jobs", {}).values():
         if isinstance(job, dict):
             assert job.get("uses") != "./.github/workflows/reusable-seed-nonprod.yml"
+
+
+def test_performance_workflow_uses_runtime_cognito_token_and_refuses_production() -> None:
+    """k6 must never rely on a persistent JWT stored as a GitHub secret, and
+    must never bind to production."""
+    perf = _workflow("performance.yml")
+    perf_source = (WORKFLOWS / "performance.yml").read_text(encoding="utf-8")
+
+    # Persistent token secret is gone; runtime-mint pattern is used.
+    assert "K6_AUTH_TOKEN" not in perf_source
+    assert "secrets.K6_AUTH_TOKEN" not in perf_source
+    assert "obtain-cognito-token.sh SMOKE" in perf_source
+    assert "SMOKE_USERNAME" in perf_source
+    assert "SMOKE_PASSWORD" in perf_source
+
+    # Workflow inputs: test / staging only, never production.
+    trigger = perf.get(True, perf.get("on", {}))["workflow_dispatch"]["inputs"]
+    envs = trigger["environment"]["options"]
+    assert set(envs) == {"test", "staging"}
+    assert "production" not in envs
+
+    # The k6 job binds to the caller-supplied environment (never a
+    # hard-coded production) and its first step refuses non-nonprod values.
+    job = perf["jobs"]["k6"]
+    assert job["environment"] == "${{ inputs.environment }}"
+    refuse_step = job["steps"][0]
+    assert "REFUSED" in refuse_step["run"]
+    assert "test|staging" in refuse_step["run"]
+    for forbidden in ("production", "baseline", "development"):
+        assert forbidden not in refuse_step["run"], (
+            f"performance refusal script unexpectedly names '{forbidden}'"
+        )
+
+    # OIDC identity permission required for the AdminInitiateAuth call is
+    # granted at the workflow level (id-token: write) not the job level, so
+    # only this workflow can request the AWS session.
+    assert perf["permissions"] == {"id-token": "write", "contents": "read"}
+
+    # The correct environment variable name is used for the base URL — the
+    # earlier bug also used the wrong var name (API_BASE_URL).
+    assert "vars.SMARTRETAILX_PUBLIC_URL" in perf_source
+    assert "vars.API_BASE_URL" not in perf_source
