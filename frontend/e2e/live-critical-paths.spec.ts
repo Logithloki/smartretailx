@@ -18,10 +18,20 @@ async function hostedUiLogin(page: Page, account: typeof customer): Promise<void
   // first-party SmartRetailX React form.  Credentials go straight to
   // Amplify Auth (SRP); no more redirect through the Cognito domain.
   await page.goto(baseURL);
-  await page.getByLabel(/^email$/i).fill(account.username);
-  await page.getByLabel(/^password$/i).fill(account.password);
+  // Wait for the React SPA to hydrate + Amplify to configure before any
+  // interaction; without this, locator.fill can race the initial render on
+  // slow CI runners.
+  await expect(page.getByRole("heading", { name: /^SmartRetailX$/ })).toBeVisible();
+  // Target the input controls by role rather than by label — the
+  // <label>Email <input/></label> pattern makes getByLabel ambiguous
+  // between the label element and the textbox, causing intermittent
+  // 60s timeouts on Playwright's locator.fill.
+  await page.getByRole("textbox", { name: /email/i }).fill(account.username);
+  // Passwords are not textboxes (Playwright reserves that role for
+  // type="text"/type="email"), so target them via the label-for id.
+  await page.locator("#signin-password").fill(account.password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/products/);
+  await expect(page).toHaveURL(/\/products/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /Product Catalogue/i })).toBeVisible();
 }
 
