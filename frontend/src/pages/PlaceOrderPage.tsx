@@ -8,6 +8,7 @@ import type {
   Product,
   ProductListResponse,
 } from "../api/types";
+import { formatCurrency } from "../utils/format";
 
 interface FormState {
   productId: string;
@@ -137,7 +138,7 @@ export function PlaceOrderPage() {
             >
               {products.map((p) => (
                 <option key={p.productId} value={p.productId}>
-                  {p.productName} — £{p.price} ({p.category})
+                  {p.productName} — {formatCurrency(p.price)} ({p.category})
                 </option>
               ))}
             </select>
@@ -180,7 +181,7 @@ export function PlaceOrderPage() {
 
           <div className="summary-row">
             <span>Unit Price</span>
-            <span>£{selected?.price || "0.00"}</span>
+            <span>{formatCurrency(selected?.price)}</span>
           </div>
 
           <div className="summary-row">
@@ -190,7 +191,7 @@ export function PlaceOrderPage() {
 
           <div className="summary-row total">
             <span>Estimated Total</span>
-            <span>£{total}</span>
+            <span>{formatCurrency(total)}</span>
           </div>
 
           <div style={{ fontSize: "0.775rem", color: "var(--text-tertiary)", background: "var(--bg-subtle)", padding: "0.75rem", borderRadius: "var(--radius-md)" }}>

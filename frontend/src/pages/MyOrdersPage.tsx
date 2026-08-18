@@ -7,6 +7,8 @@ import {
   RealtimeUpdate,
   useOrderStatusStream,
 } from "../hooks/useOrderStatusStream";
+import { Link } from "react-router-dom";
+import { formatCurrency } from "../utils/format";
 
 export function MyOrdersPage() {
   const auth = useAuth();
@@ -187,7 +189,7 @@ export function MyOrdersPage() {
         </div>
         <div className="stat-card">
           <span className="stat-label">Total Spend</span>
-          <span className="stat-value">£{stats.spent}</span>
+          <span className="stat-value">{formatCurrency(stats.spent)}</span>
           <span className="stat-desc">Confirmed orders subtotal</span>
         </div>
       </div>
@@ -223,8 +225,34 @@ export function MyOrdersPage() {
           <div className="empty-state-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           </div>
-          <h3>No Orders Found</h3>
-          <p>You haven't placed any orders matching the selected filter criteria yet.</p>
+          {orders.length === 0 ? (
+            <>
+              <h3>No orders yet</h3>
+              <p>You haven't placed any orders. Browse the catalogue to start shopping.</p>
+              <Link
+                to="/products"
+                className="btn btn-secondary"
+                style={{ marginTop: "1rem" }}
+              >
+                Browse products
+              </Link>
+            </>
+          ) : (
+            <>
+              <h3>No orders match your filters</h3>
+              <p>Try clearing the search or status filter to see all {orders.length} orders.</p>
+              <button
+                className="btn btn-secondary"
+                style={{ marginTop: "1rem" }}
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                }}
+              >
+                Reset filters
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="table-container">
@@ -259,7 +287,7 @@ export function MyOrdersPage() {
                       .map((i) => `${i.quantity} × ${i.productId}`)
                       .join(", ")}
                   </td>
-                  <td style={{ fontWeight: 700 }}>£{o.totalAmount}</td>
+                  <td style={{ fontWeight: 700 }}>{formatCurrency(o.totalAmount)}</td>
                   <td>
                     <span
                       className={`badge ${
@@ -283,7 +311,11 @@ export function MyOrdersPage() {
                       </button>
                     )}
                   </td>
-                  <td><span className="badge badge-pending">{o.fulfilmentStatus.replaceAll("_", " ")}</span></td>
+                  <td>
+                    <span className="badge badge-pending">
+                      {(o.fulfilmentStatus ?? "NOT_STARTED").replaceAll("_", " ")}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

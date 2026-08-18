@@ -38,7 +38,10 @@ test.describe("customer critical journey", () => {
     // The cart page does not navigate on its own; it renders a "Track
     // delivery" button after the Order Service returns.
     await page.getByRole("button", { name: "Add to cart" }).first().click();
-    await page.getByRole("link", { name: "Cart" }).click();
+    // The cart nav link should reflect the item count immediately so the
+    // shopper knows the button worked without waiting for the cart page.
+    await expect(page.getByRole("link", { name: /Cart \(1 item\)/i })).toBeVisible();
+    await page.getByRole("link", { name: /Cart/i }).click();
     await expect(page.getByRole("heading", { name: /Cart & checkout/i })).toBeVisible();
     await page.getByRole("button", { name: "Confirm order" }).click();
 
