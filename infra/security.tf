@@ -657,29 +657,58 @@ resource "aws_cognito_user_pool" "main" {
 }
 
 # ─── Cognito Pre-SignUp Auto-Confirm & SES Registration Lambda ───
+#
+# PR B narrows the auto-confirm rule.
+#
+# Before PR B: the Lambda auto-confirmed EVERY signup on the Test pool, so
+# ordinary Sign Up would land as CONFIRMED without an email verification
+# code and Test could not exercise the real production-like verification
+# flow.
+#
+# After PR B: only synthetic CI/E2E identities that match the explicit
+# pattern below are auto-confirmed.  Ordinary human signups on Test now
+# behave exactly like Staging (UNCONFIRMED, real Cognito email, /verify-email
+# UX exercised).
+#
+# Deliberately narrow: the pattern is limited to the exact
+# `ci-{role}-{env}@example.com` shape used by the runtime-mint scripts, so
+# broader `@example.com` or `ci-*` collisions cannot bypass verification.
+#
+# Terraform stamps CI_AUTO_CONFIRM_PATTERN into the Lambda source at plan
+# time so the pattern lives in one place; changing it requires a Terraform
+# apply, not a runtime environment variable.
 data "archive_file" "cognito_auto_confirm_zip" {
   type        = "zip"
   output_path = "${path.module}/cognito_auto_confirm.zip"
   source {
     content = replace(<<-EOF
-import boto3
 import os
+import re
+import boto3
 
 ses_client = boto3.client('ses', region_name=os.environ.get('AWS_REGION', 'eu-west-1'))
 
+# Only the exact synthetic CI/E2E identity shape the runtime-mint scripts
+# create is auto-confirmed.  Anything else - including any real customer
+# who happens to sign up with an @example.com address - goes through the
+# normal Cognito email-verification flow.
+CI_AUTO_CONFIRM_PATTERN = re.compile(
+    r'^ci-(smoke|customer|admin)-(development|test|staging)@example\.com$'
+)
+
 def handler(event, context):
-    event['response']['autoConfirmUser'] = True
-    event['response']['autoVerifyEmail'] = True
-    
-    # Automatically register new user's email in AWS SES
-    email = event.get('request', {}).get('userAttributes', {}).get('email')
-    if email:
+    email = (event.get('request', {}) or {}).get('userAttributes', {}).get('email', '') or ''
+    if CI_AUTO_CONFIRM_PATTERN.fullmatch(email):
+        event['response']['autoConfirmUser'] = True
+        event['response']['autoVerifyEmail'] = True
         try:
             ses_client.verify_email_identity(EmailAddress=email)
-            print(f"Dispatched SES verification to {email}")
+            print(f'CI auto-confirm: dispatched SES verification to {email}')
         except Exception as e:
-            print(f"SES verification exception for {email}: {e}")
-            
+            print(f'CI auto-confirm: SES verify_email_identity failed for {email}: {e}')
+    # Non-matching addresses: return the event unmodified so Cognito sends
+    # its own 6-digit verification code (this is the desired production
+    # behaviour on both Dev and Staging).
     return event
 EOF
     , "\r\n", "\n")

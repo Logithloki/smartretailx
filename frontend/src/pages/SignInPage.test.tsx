@@ -145,15 +145,32 @@ describe("SignInPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps forgot password / create account as visibly-disabled links (PR B)", () => {
+  it("exposes real Forgot password + Create account links (PR B)", () => {
     renderPage(makeAuth());
-    // The disabled-link class + aria-disabled=true is the visual + a11y
-    // contract for links that PR B will finish wiring up.
     const forgot = screen.getByRole("link", { name: /forgot password/i });
     const create = screen.getByRole("link", { name: /create account/i });
+    expect(forgot).toHaveAttribute("href", "/forgot-password");
+    expect(create).toHaveAttribute("href", "/signup");
     for (const link of [forgot, create]) {
-      expect(link).toHaveClass("disabled-link");
-      expect(link).toHaveAttribute("aria-disabled", "true");
+      expect(link).not.toHaveClass("disabled-link");
+      expect(link).not.toHaveAttribute("aria-disabled", "true");
     }
+  });
+
+  it("offers a Verify account CTA when Cognito reports UserNotConfirmedException", async () => {
+    const signIn = vi.fn().mockRejectedValue(
+      Object.assign(new Error(""), { name: "UserNotConfirmedException" }),
+    );
+    renderPage(makeAuth({ signIn }));
+    fireEvent.change(screen.getByLabelText(/^email$/i), {
+      target: { value: "unconfirmed@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password$/i), {
+      target: { value: "Correct-Horse-1!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /verify account/i })).toBeInTheDocument(),
+    );
   });
 });

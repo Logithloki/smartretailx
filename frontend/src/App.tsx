@@ -11,6 +11,10 @@ import { AdminUsersPage } from "./pages/AdminUsersPage";
 import { AdminFulfilmentPage } from "./pages/AdminFulfilmentPage";
 import { AdminPromotionsPage } from "./pages/AdminPromotionsPage";
 import { SignInPage } from "./pages/SignInPage";
+import { SignUpPage } from "./pages/SignUpPage";
+import { VerifyEmailPage } from "./pages/VerifyEmailPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { useIsAdmin } from "./hooks/useIsAdmin";
 import { useCart } from "./context/CartContext";
 import { createCognitoLogoutUrl } from "./auth-config";
@@ -89,7 +93,25 @@ export default function App() {
   }
 
   if (!auth.isAuthenticated) {
-    return <SignInPage />;
+    // PR B: unauthenticated users need access to the whole set of public
+    // auth routes (sign in / sign up / verify email / forgot / reset), not
+    // just the sign-in page.  Route on URL rather than forcing SignInPage
+    // regardless.
+    return (
+      <div className="app">
+        <main className="app-main">
+          <Routes>
+            <Route path="/login" element={<SignInPage />} />
+            <Route path="/signup" element={<SignUpPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/callback" element={<CallbackPage />} />
+            <Route path="*" element={<SignInPage />} />
+          </Routes>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -279,6 +301,10 @@ export default function App() {
             }
           />
           <Route path="/login" element={<SignInPage />} />
+          <Route path="/signup" element={<SignUpPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route
             path="*"
             element={

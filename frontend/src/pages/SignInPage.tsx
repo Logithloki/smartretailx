@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { friendlyAuthError } from "../auth/cognito-errors";
 import { createAuthConfig } from "../auth-config";
@@ -17,6 +17,7 @@ import { UserManager } from "oidc-client-ts";
 // button that appears.  It is not offered to normal users.
 export function SignInPage() {
   const auth = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const hostedUiFallback = searchParams.get("fallback") === "hosted-ui";
   const [email, setEmail] = useState("");
@@ -25,6 +26,7 @@ export function SignInPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [challengeMessage, setChallengeMessage] = useState<string | null>(null);
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -70,6 +72,13 @@ export function SignInPage() {
     } catch (err) {
       const mapped = friendlyAuthError(err);
       setFormError(mapped.detail ?? mapped.headline);
+      // PR B: route unconfirmed accounts directly to the verify screen
+      // with the email prefilled so the user is not forced to restart.
+      if ((err as { name?: string } | null)?.name === "UserNotConfirmedException") {
+        setUnconfirmedEmail(email.trim().toLowerCase());
+      } else {
+        setUnconfirmedEmail(null);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -152,13 +161,25 @@ export function SignInPage() {
           </button>
         </form>
 
+        {unconfirmedEmail && (
+          <div className="auth-inline-action">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() =>
+                navigate(
+                  `/verify-email?email=${encodeURIComponent(unconfirmedEmail)}`,
+                )
+              }
+            >
+              Verify account
+            </button>
+          </div>
+        )}
+
         <div className="auth-links">
-          <Link to="/forgot-password" aria-disabled="true" className="disabled-link" title="Coming in the next SmartRetailX release">
-            Forgot password?
-          </Link>
-          <Link to="/signup" aria-disabled="true" className="disabled-link" title="Coming in the next SmartRetailX release">
-            Create account
-          </Link>
+          <Link to="/forgot-password">Forgot password?</Link>
+          <Link to="/signup">Create account</Link>
         </div>
 
         <div className="auth-footer-note">
