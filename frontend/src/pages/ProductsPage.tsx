@@ -5,6 +5,7 @@ import type { Product, ProductListResponse } from "../api/types";
 import { useCart } from "../context/CartContext";
 import { useOrderStatusStream, type RealtimeUpdate } from "../hooks/useOrderStatusStream";
 import { fetchAuthoritativeProductUpdates } from "./catalogueRefresh";
+import { formatCurrency, pricesAreEqual } from "../utils/format";
 
 export function ProductsPage() {
   const auth = useAuth();
@@ -182,8 +183,13 @@ export function ProductsPage() {
                 <h2>{p.productName}</h2>
                 <span className="category-tag">{p.category}</span>
               </div>
-              <div className="price">£{p.effectivePrice ?? p.price}</div>
-              {p.effectivePrice && p.effectivePrice !== p.price && <div><s>£{p.price}</s> <span className="badge badge-confirmed">Promotion</span></div>}
+              <div className="price">{formatCurrency(p.effectivePrice ?? p.price)}</div>
+              {p.effectivePrice && !pricesAreEqual(p.effectivePrice, p.price) && (
+                <div>
+                  <s>{formatCurrency(p.price)}</s>{" "}
+                  <span className="badge badge-confirmed">Promotion</span>
+                </div>
+              )}
               <p className="description">
                 {p.description || "High quality inventory item tracked in SmartRetailX catalog."}
               </p>

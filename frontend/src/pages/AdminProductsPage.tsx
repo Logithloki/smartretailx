@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/useAuth";
 import { apiFetch, ApiError } from "../api/client";
+import { formatCurrency } from "../utils/format";
 import type {
   Product,
   ProductCreate,
@@ -320,7 +321,7 @@ export function AdminProductsPage() {
                   <td>
                     <span className="category-tag">{p.category}</span>
                   </td>
-                  <td style={{ fontWeight: 700 }}>£{p.price}</td>
+                  <td style={{ fontWeight: 700 }}>{formatCurrency(p.price)}</td>
                   <td style={{ textAlign: "right" }}>
                     <div className="actions" style={{ justifyContent: "flex-end" }}>
                       <button

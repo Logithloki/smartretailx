@@ -12,6 +12,7 @@ import { AdminFulfilmentPage } from "./pages/AdminFulfilmentPage";
 import { AdminPromotionsPage } from "./pages/AdminPromotionsPage";
 import { SignInPage } from "./pages/SignInPage";
 import { useIsAdmin } from "./hooks/useIsAdmin";
+import { useCart } from "./context/CartContext";
 import { createCognitoLogoutUrl } from "./auth-config";
 import { getRuntimeConfig } from "./config/runtime-config";
 
@@ -69,6 +70,7 @@ export default function App() {
   const auth = useAuth();
   const isAdmin = useIsAdmin();
   const location = useLocation();
+  const { itemCount: cartItemCount } = useCart();
 
   const userEmail = auth.user?.profile.email as string | undefined;
 
@@ -109,9 +111,19 @@ export default function App() {
               <Link
                 to="/cart"
                 className={location.pathname === "/cart" ? "active" : ""}
+                aria-label={
+                  cartItemCount > 0
+                    ? `Cart (${cartItemCount} item${cartItemCount === 1 ? "" : "s"})`
+                    : "Cart (empty)"
+                }
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
                 Cart
+                {cartItemCount > 0 && (
+                  <span className="cart-badge" aria-hidden="true">
+                    {cartItemCount > 99 ? "99+" : cartItemCount}
+                  </span>
+                )}
               </Link>
             )}
             {auth.isAuthenticated && (
