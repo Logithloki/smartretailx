@@ -284,7 +284,7 @@ export function MyOrdersPage() {
                   <td>{new Date(o.createdAt).toLocaleString()}</td>
                   <td>
                     {o.items
-                      .map((i) => `${i.quantity} × ${i.productId}`)
+                      .map((i) => `${i.quantity} × ${i.productName || i.productId}`)
                       .join(", ")}
                   </td>
                   <td style={{ fontWeight: 700 }}>{formatCurrency(o.totalAmount)}</td>
