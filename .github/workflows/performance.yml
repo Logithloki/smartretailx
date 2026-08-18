@@ -1,5 +1,12 @@
 name: Performance evidence
 
+# k6 load-test workflow.  Mirrors the runtime Cognito authentication design
+# already used by reusable-smoke-tests and reusable-api-tests: no persistent
+# JWT is stored as a GitHub secret, and no live token is written to the
+# repository or artifact.  A short-lived AccessToken is minted per job from
+# the durable SMOKE_USERNAME / SMOKE_PASSWORD environment secret via
+# AdminInitiateAuth and injected into k6 as $AUTH_TOKEN.
+
 on:
   workflow_dispatch:
     inputs:
@@ -13,6 +20,7 @@ on:
         required: true
 
 permissions:
+  id-token: write
   contents: read
 
 concurrency:
@@ -23,16 +31,44 @@ jobs:
   k6:
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT_NAME: ${{ inputs.environment }}
+      BASE_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
+      SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+      SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+      COGNITO_AUTHORITY: ${{ vars.SMARTRETAILX_COGNITO_AUTHORITY }}
+      COGNITO_CLIENT_ID: ${{ vars.SMARTRETAILX_COGNITO_CLIENT_ID }}
     steps:
+      - name: Refuse to load-test production
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$ENVIRONMENT_NAME" in
+            test|staging) echo "load-testing $ENVIRONMENT_NAME" ;;
+            *) echo "REFUSED: performance workflow must never bind to '$ENVIRONMENT_NAME'"; exit 1 ;;
+          esac
+      - name: Validate performance Environment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for setting in BASE_URL SMOKE_USERNAME SMOKE_PASSWORD COGNITO_AUTHORITY COGNITO_CLIENT_ID; do
+            [[ -n "${!setting:-}" ]] || { echo "Missing required Environment setting: $setting"; exit 1; }
+          done
       - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Obtain fresh Cognito smoke access token
+        shell: bash
+        run: ./scripts/obtain-cognito-token.sh SMOKE
       - uses: grafana/setup-k6-action@v1
       - name: Run intentionally selected profile
         env:
-          BASE_URL: ${{ vars.API_BASE_URL }}
           K6_PROFILE: ${{ inputs.profile }}
-          AUTH_TOKEN: ${{ secrets.K6_AUTH_TOKEN }}
         shell: bash
         run: |
+          set -euo pipefail
           case '${{ inputs.profile }}' in
             smoke) script=k6-tests/order-smoke.js ;;
             load) script=k6-tests/load-test.js ;;
@@ -40,6 +76,9 @@ jobs:
             stress) script=k6-tests/stress-test.js ;;
             spike) script=k6-tests/spike-test.js ;;
           esac
+          # SMOKE_TOKEN comes from obtain-cognito-token.sh via GITHUB_ENV.
+          # Re-export it under the AUTH_TOKEN name the k6 scripts expect.
+          export AUTH_TOKEN="$SMOKE_TOKEN"
           k6 run --summary-export k6-summary.json "$script"
       - uses: actions/upload-artifact@v4
         if: always()
