@@ -610,8 +610,21 @@ resource "aws_cognito_user_pool" "main" {
     email_sending_account = "COGNITO_DEFAULT"
   }
 
-  # MFA is OFF for the demo; report documents it as a one-flag scale-up
-  # (production practices at demo sizing — lecturer ruling).
+  # PR A: switch MFA from OFF to OPTIONAL so individual users can enrol a
+  # TOTP authenticator via Profile > Security in a later PR.  OPTIONAL
+  # means:
+  #   - a user who has NOT called SetUserMFAPreference remains
+  #     non-MFA-enrolled and continues to authenticate exactly as before,
+  #   - a user who opts in with an authenticator app must present a TOTP
+  #     code on every subsequent sign-in.
+  # CI users (see scripts/obtain-cognito-token.sh) never call
+  # SetUserMFAPreference so they stay non-MFA-enrolled.
+  mfa_configuration = "OPTIONAL"
+
+  software_token_mfa_configuration {
+    enabled = true
+  }
+
   password_policy {
     minimum_length    = 12
     require_lowercase = true
@@ -766,8 +779,17 @@ resource "aws_cognito_user_pool_client" "spa" {
   )
 
   explicit_auth_flows = [
-    "ALLOW_ADMIN_USER_PASSWORD_AUTH", # scripts/get-jwt.sh for CW smoke tests
-    "ALLOW_REFRESH_TOKEN_AUTH"
+    # Server-side CI runtime-mint scripts (obtain-smoke-access-token.sh /
+    # obtain-cognito-token.sh) call AdminInitiateAuth with a dedicated
+    # deploy role.  This flow is not available to the SPA.
+    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
+    # PR A: SRP authentication for the custom React sign-in page.  The
+    # password never leaves the browser in cleartext; SRP is the AWS-
+    # recommended browser client flow.  Amplify Auth v6 uses this flow
+    # by default when we pass authFlowType: "USER_SRP_AUTH".
+    "ALLOW_USER_SRP_AUTH",
+    # Refresh-token flow for both the SPA and CI scripts.
+    "ALLOW_REFRESH_TOKEN_AUTH",
   ]
 
   access_token_validity  = 60

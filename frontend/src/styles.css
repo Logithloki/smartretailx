@@ -979,3 +979,84 @@ input:disabled, select:disabled, textarea:disabled {
   line-height: 1.4;
 }
 
+/* Password field with show/hide toggle (SignInPage — PR A). */
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.password-input-wrap > input {
+  flex: 1;
+  padding-right: 4.5rem;
+}
+
+.password-visibility-toggle {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.password-visibility-toggle:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+.password-visibility-toggle:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.password-visibility-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.auth-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.auth-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-links a:hover:not(.disabled-link) {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.auth-links .disabled-link {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.auth-fallback {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--border-default);
+}
+
+.auth-fallback-notice {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem 0;
+}
+
