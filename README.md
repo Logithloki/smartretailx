@@ -1,5 +1,14 @@
 # SmartRetailX
 
+> **Academic project — public for assessment and portfolio only.**
+> This repository is an academic university project (COMP60010) made
+> publicly available so lecturers, assessors, and interested reviewers
+> can inspect the code, history, and CI/CD evidence. Unless otherwise
+> stated in a file that carries its own explicit licence, **no licence
+> is granted for reuse, redistribution, or derivative works.** The
+> author retains all rights. Reviewing, reading, and commenting are of
+> course welcome.
+
 Production-practice, demo-scale retail platform for COMP60010. The system uses a React SPA, Cognito Hosted UI authorization-code + PKCE, four FastAPI services on ARM64 ECS Fargate, DynamoDB/Aurora polyglot persistence, and a reliable event-driven order Saga.
 
 Canonical public API: `/v1/*`. Infrastructure region: `eu-west-1`. Default infrastructure posture: `live=false` (parked; retained edge/storage resources still cost money).
