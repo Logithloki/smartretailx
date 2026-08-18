@@ -50,9 +50,12 @@ test.describe("customer critical journey", () => {
     await expect(page.getByRole("heading", { name: /My Orders/ })).toBeVisible();
     await expect(page.locator("tbody tr").first()).toBeVisible();
     // Terminal status may be CONFIRMED (stock available) or REJECTED
-    // (insufficient stock).  The Saga's asynchronous transition takes a
-    // few seconds after the order is submitted.
-    await expect(page.locator("tbody tr").first().locator(".badge")).toHaveText(
+    // (insufficient stock).  The Saga's asynchronous transition takes
+    // a few seconds after the order is submitted.  Each order row
+    // renders two badges (order status + fulfilment status), so the
+    // locator has to select the first one specifically instead of
+    // relying on strict single-match.
+    await expect(page.locator("tbody tr").first().locator(".badge").first()).toHaveText(
       /CONFIRMED|REJECTED/,
       { timeout: 45_000 },
     );
