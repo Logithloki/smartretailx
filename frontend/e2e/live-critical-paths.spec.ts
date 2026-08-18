@@ -78,13 +78,25 @@ test.describe("customer critical journey", () => {
     await page.goto(`${baseURL}/admin/products`);
     await expect(page.getByText(/Access Restricted/)).toBeVisible();
     const status = await page.evaluate(async () => {
-      const key = Object.keys(sessionStorage).find((item) => item.startsWith("oidc.user:"));
-      const token = key ? JSON.parse(sessionStorage.getItem(key) ?? "{}").access_token : "";
+      // PR A migrated auth to Amplify v6, which stores tokens in
+      // localStorage under keys of the form
+      //   CognitoIdentityServiceProvider.<clientId>.<userSub>.accessToken
+      // Reading it directly here is the least-invasive way to prove that
+      // a real customer JWT gets a 403 (not 401) from the admin API.
+      const keys = Object.keys(localStorage);
+      const accessKey = keys.find(
+        (k) => k.startsWith("CognitoIdentityServiceProvider.") && k.endsWith(".accessToken"),
+      );
+      const token = accessKey ? localStorage.getItem(accessKey) ?? "" : "";
       return fetch("/v1/products/e2e-forbidden", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       }).then((response) => response.status);
     });
+    // 403 = the JWT authoriser accepted the token and the FastAPI RBAC
+    // middleware then denied it (correct customer-blocked-from-admin
+    // outcome).  401 would mean the token was not sent or was invalid,
+    // which would incorrectly pass this assertion for the wrong reason.
     expect(status).toBe(403);
   });
 });
