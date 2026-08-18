@@ -627,8 +627,20 @@ input:disabled, select:disabled, textarea:disabled {
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  overflow: hidden;
+  /* overflow-x: auto lets wide tables (admin lists, orders) scroll
+     horizontally on narrow viewports instead of being clipped by the
+     rounded container, and overflow-y: hidden preserves the rounded
+     corners on the vertical axis. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   box-shadow: var(--shadow-xs);
+}
+
+/* Give the table itself a minimum readable width so cells don't
+   crunch down under 480px and start wrapping every column. */
+.table-container .table {
+  min-width: 720px;
 }
 
 .table {

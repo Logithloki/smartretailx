@@ -33,20 +33,21 @@ esac
 # Canonical synthetic catalogue.  Values intentionally mirror the LocalStack
 # fixture so developer laptops and non-production environments demonstrate
 # the same behaviour.  Stock quantities are generous enough for browser E2E
-# and API contract flows to CONFIRM orders.
+# and API contract flows to CONFIRM orders.  Descriptions are per-product
+# so the UI no longer shows the same placeholder on every card.
 readarray -t CATALOGUE <<'CATALOG'
-prod-laptop-001|MacBook Pro 14|1299.99|Electronics|50
-prod-mouse-002|Magic Mouse|79.99|Accessories|150
-prod-monitor-003|4K Monitor 27inch|599.99|Electronics|40
-prod-keyboard-004|Mechanical Keyboard|149.99|Accessories|200
-prod-headset-005|Noise Cancelling Headphones|349.99|Electronics|80
+prod-laptop-001|MacBook Pro 14|1299.99|Electronics|50|14-inch Apple Silicon laptop with 16 GB unified memory, 512 GB SSD and Liquid Retina XDR display.
+prod-mouse-002|Magic Mouse|79.99|Accessories|150|Wireless multi-touch mouse with rechargeable battery and 30-day standby.
+prod-monitor-003|4K Monitor 27inch|599.99|Electronics|40|27-inch 4K UHD IPS display with HDR400, USB-C 90 W power delivery and factory colour calibration.
+prod-keyboard-004|Mechanical Keyboard|149.99|Accessories|200|Full-size mechanical keyboard with hot-swappable switches, per-key RGB backlighting and USB-C connectivity.
+prod-headset-005|Noise Cancelling Headphones|349.99|Electronics|80|Over-ear noise cancelling headphones with 30-hour battery life, spatial audio and travel case.
 CATALOG
 
 http_upsert_product() {
-  local id="$1" name="$2" price="$3" category="$4"
+  local id="$1" name="$2" price="$3" category="$4" description="$5"
   local body
-  body=$(printf '{"productId":"%s","productName":"%s","price":"%s","category":"%s"}' \
-    "$id" "$name" "$price" "$category")
+  body=$(python3 -c 'import json,sys; print(json.dumps({"productId":sys.argv[1],"productName":sys.argv[2],"price":sys.argv[3],"category":sys.argv[4],"description":sys.argv[5]}))' \
+    "$id" "$name" "$price" "$category" "$description")
   # Try POST first (idempotent-friendly), fall back to PUT if it already exists.
   local status
   status=$(curl --silent --show-error --output /tmp/seed-body -w "%{http_code}" \
@@ -59,8 +60,8 @@ http_upsert_product() {
     409|400)
       # Already exists (or existed) -> PUT the same body to converge.
       local put_body
-      put_body=$(printf '{"productName":"%s","price":"%s","category":"%s"}' \
-        "$name" "$price" "$category")
+      put_body=$(python3 -c 'import json,sys; print(json.dumps({"productName":sys.argv[1],"price":sys.argv[2],"category":sys.argv[3],"description":sys.argv[4]}))' \
+        "$name" "$price" "$category" "$description")
       local put_status
       put_status=$(curl --silent --show-error --output /tmp/seed-body -w "%{http_code}" \
         -X PUT "$API_BASE_URL/v1/products/$id" \
@@ -94,8 +95,8 @@ http_upsert_stock() {
 
 echo "Seeding canonical catalogue into environment: $ENVIRONMENT_NAME"
 for row in "${CATALOGUE[@]}"; do
-  IFS='|' read -r id name price category qty <<<"$row"
-  http_upsert_product "$id" "$name" "$price" "$category"
+  IFS='|' read -r id name price category qty description <<<"$row"
+  http_upsert_product "$id" "$name" "$price" "$category" "$description"
   http_upsert_stock   "$id" "$qty"
 done
 echo "Seed complete."
