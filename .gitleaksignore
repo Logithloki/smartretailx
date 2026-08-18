@@ -1,3 +1,25 @@
+# Gitleaks known-safe historical false positives.
+#
+# Fingerprints below are individually verified.  Do NOT add broad regex or
+# path exclusions here.  Never suppress a fingerprint without inspecting
+# its content and confirming it carries no real credential.
+#
+# 1. Deliberately unsigned local-only JWT fixture used by the historical
+#    LocalStack integration workflow.  The three-part JWT ends in the
+#    literal ASCII string "sig" as its signature, so it cannot be
+#    validated against any Cognito issuer, only accepted by the mock
+#    test service running in the CI job.  The current workflow
+#    (`reusable-integration-tests.yml`) still carries the same fixture
+#    but splits the string with printf so the scanner no longer flags
+#    it; the historical form remains in Git history.
 ff61e166e4e15f046ae381246328398fd9db4850:.github/workflows/reusable/integration-tests.yml:generic-api-key:79
+#
+# 2. AWS API Gateway request ID quoted in the CW-1 live verification
+#    notes.  Request IDs are public identifiers returned by AWS in every
+#    response's x-amzn-RequestId header and appear in support tickets;
+#    they are not credentials.
 ff61e166e4e15f046ae381246328398fd9db4850:docs/final-live-verification.md:generic-api-key:100
+#
+# 3. The same deliberately-unsigned local-only JWT fixture, in a
+#    historical copy of the deploy workflow (renamed/replaced since).
 b8875463338941deccac226083a18d6df13445f3:.github/workflows/deploy.yml:generic-api-key:204
