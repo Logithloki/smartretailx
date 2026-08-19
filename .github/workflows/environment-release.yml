@@ -1,0 +1,225 @@
+name: Reviewed environment release (test/staging)
+
+# Mirrors baseline-release.yml but for the isolated non-baseline
+# environments (test, staging). Development uses baseline-release.yml
+# because it is the same-state baseline lineage.
+#
+# Production is INTENTIONALLY NOT REACHABLE from this workflow.
+# The `environment` input is a fixed choice list (test|staging); the
+# GitHub Environment binding on each job forces the correct approval
+# rules and OIDC subject; the backend/tfvars are chosen from a fixed
+# environment→file mapping (fail-closed, no free-text injection).
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Non-baseline environment to release
+        required: true
+        type: choice
+        options: [test, staging]
+      release_run_id:
+        description: Main-branch immutable release run ID
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: smartretailx-environment-release-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      order_image: ${{ steps.release.outputs.order_image }}
+      inventory_image: ${{ steps.release.outputs.inventory_image }}
+      product_image: ${{ steps.release.outputs.product_image }}
+      user_image: ${{ steps.release.outputs.user_image }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: release
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ github.token }}
+      - id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '([.order_service_digest,.inventory_service_digest,.product_service_digest,.user_service_digest]
+            | all(test("^sha256:[0-9a-f]{64}$"))) and
+            ([.order_service_image,.inventory_service_image,.product_service_image,.user_service_image]
+            | all(test("^[0-9]+\\.dkr\\.ecr\\.eu-west-1\\.amazonaws\\.com/smartretailx/(order|inventory|product|user)-service@sha256:[0-9a-f]{64}$")))' release/release-manifest.json >/dev/null
+          echo "release_id=$(jq -r .release_id release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          for service in order inventory product user; do
+            echo "${service}_image=$(jq -r ".${service}_service_image" release/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          done
+
+  plan:
+    needs: release
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: eu-west-1
+      - name: Materialize immutable image references
+        working-directory: infra
+        env:
+          ORDER: ${{ needs.release.outputs.order_image }}
+          INVENTORY: ${{ needs.release.outputs.inventory_image }}
+          PRODUCT: ${{ needs.release.outputs.product_image }}
+          USER: ${{ needs.release.outputs.user_image }}
+        run: |
+          jq -n --arg order "$ORDER" --arg inventory "$INVENTORY" \
+            --arg product "$PRODUCT" --arg user "$USER" \
+            '{service_image_references:{order:$order,inventory:$inventory,product:$product,user:$user}}' \
+            > release.auto.tfvars.json
+      - name: Refuse an empty or wrong Terraform state
+        working-directory: infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform init -reconfigure \
+            -backend-config="environments/${{ inputs.environment }}/backend.hcl"
+          terraform state list > "$RUNNER_TEMP/env-state.txt"
+          python ../scripts/check_baseline_plan.py --state-list "$RUNNER_TEMP/env-state.txt"
+      - name: Produce and guard the environment plan
+        working-directory: infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform plan \
+            -var-file="environments/${{ inputs.environment }}/terraform.tfvars.json" \
+            -var=live=true \
+            -var-file=release.auto.tfvars.json \
+            -out=tfplan
+          terraform show -json tfplan > tfplan.json
+          python ../scripts/check_baseline_plan.py tfplan.json
+          jq '{add:([.resource_changes[]? | select(.change.actions == ["create"])]|length),change:([.resource_changes[]? | select(.change.actions == ["update"])]|length),destroy:([.resource_changes[]? | select(.change.actions | index("delete"))]|length)}' \
+            tfplan.json > plan-summary.json
+          sha256sum tfplan > tfplan.sha256
+          cat plan-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-env-plan-${{ inputs.environment }}
+          path: |
+            infra/tfplan
+            infra/tfplan.sha256
+            infra/tfplan.json
+            infra/plan-summary.json
+          retention-days: 2
+
+  apply_reviewed_plan:
+    needs: plan
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SMARTRETAILX_TERRAFORM_APPLY_ROLE_ARN }}
+          aws-region: eu-west-1
+      - uses: actions/download-artifact@v4
+        with:
+          name: reviewed-env-plan-${{ inputs.environment }}
+          path: infra
+      - name: Apply only the human-reviewed environment plan
+        working-directory: infra
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check tfplan.sha256
+          terraform init -reconfigure \
+            -backend-config="environments/${{ inputs.environment }}/backend.hcl"
+          terraform state list > "$RUNNER_TEMP/env-state.txt"
+          python ../scripts/check_baseline_plan.py --state-list "$RUNNER_TEMP/env-state.txt"
+          terraform apply tfplan
+
+  ecs:
+    needs: [release, apply_reviewed_plan]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { service: order, image_output: order_image, migrate: false }
+          - { service: inventory, image_output: inventory_image, migrate: true }
+          - { service: product, image_output: product_image, migrate: false }
+          - { service: user, image_output: user_image, migrate: false }
+    uses: ./.github/workflows/reusable-deploy-ecs.yml
+    with:
+      service: ${{ matrix.service }}
+      image_reference: ${{ needs.release.outputs[matrix.image_output] }}
+      environment_name: ${{ inputs.environment }}
+      run_migration: ${{ matrix.migrate }}
+
+  lambdas:
+    needs: [release, ecs]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { component: notification-lambda, suffix: notification }
+          - { component: reconciliation-lambda, suffix: stock-reconciliation }
+          - { component: ws-authorizer-lambda, suffix: ws-authorizer }
+          - { component: ws-connect-lambda, suffix: ws-connect }
+          - { component: ws-disconnect-lambda, suffix: ws-disconnect }
+          - { component: ws-push-lambda, suffix: ws-push }
+          - { component: order-outbox-publisher, suffix: order-outbox-publisher }
+    uses: ./.github/workflows/reusable-deploy-lambda.yml
+    with:
+      component: ${{ matrix.component }}
+      function_suffix: ${{ matrix.suffix }}
+      release_run_id: ${{ inputs.release_run_id }}
+      environment_name: ${{ inputs.environment }}
+
+  frontend:
+    needs: [release, ecs, lambdas]
+    uses: ./.github/workflows/reusable-deploy-frontend.yml
+    with:
+      release_run_id: ${{ inputs.release_run_id }}
+      release_id: ${{ needs.release.outputs.release_id }}
+      environment_name: ${{ inputs.environment }}
+
+  seed:
+    needs: frontend
+    uses: ./.github/workflows/reusable-seed-nonprod.yml
+    with:
+      environment_name: ${{ inputs.environment }}
+    secrets: inherit
+
+  smoke:
+    needs: seed
+    uses: ./.github/workflows/reusable-smoke-tests.yml
+    with:
+      environment_name: ${{ inputs.environment }}
+    secrets: inherit
+
+  api_contracts:
+    needs: smoke
+    uses: ./.github/workflows/reusable-api-tests.yml
+    with:
+      environment_name: ${{ inputs.environment }}
+    secrets: inherit
+
+  browser_e2e:
+    needs: smoke
+    uses: ./.github/workflows/reusable-browser-e2e.yml
+    with:
+      environment_name: ${{ inputs.environment }}
+    secrets: inherit
