@@ -104,6 +104,35 @@ test.describe("customer critical journey", () => {
 test.describe("administrator critical journey", () => {
   test.skip(!baseURL || !admin.username || !admin.password, "live admin credentials are not configured");
 
+  test("admin views fulfilment queue and progresses an order", async ({ page }) => {
+    await hostedUiLogin(page, admin);
+    await page.getByRole("link", { name: /Admin: Fulfilment/i }).click();
+    await expect(page.getByRole("heading", { name: /Admin: Fulfilment/ })).toBeVisible();
+
+    const statsCards = page.locator('[role="status"]');
+    await expect(statsCards.first()).toBeVisible();
+
+    const actionableRow = page.locator("tbody tr").filter({
+      has: page.getByRole("button", { name: /Start packing/i }),
+    });
+    const hasActionable = await actionableRow.count();
+    if (hasActionable > 0) {
+      const orderId = await actionableRow.first().locator("code").textContent();
+      await actionableRow.first().getByRole("button", { name: /Start packing/i }).click();
+      await expect(
+        actionableRow.first().locator(".badge").filter({ hasText: /PACKING/ }),
+      ).toBeVisible({ timeout: 10_000 });
+
+      await actionableRow.first().click();
+      const drawer = page.getByRole("dialog");
+      await expect(drawer).toBeVisible();
+      await expect(drawer.getByText(orderId!)).toBeVisible();
+      await expect(drawer.getByRole("progressbar")).toBeVisible();
+      await drawer.getByRole("button", { name: /Close detail panel/i }).click();
+      await expect(drawer).not.toBeVisible();
+    }
+  });
+
   test("admin creates and deletes a product, then adjusts inventory", async ({ page }) => {
     await hostedUiLogin(page, admin);
     const productId = `e2e-${Date.now()}`;

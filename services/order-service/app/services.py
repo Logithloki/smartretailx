@@ -139,6 +139,8 @@ class OrderRepository:
         event_id = f"order-created#{order.orderId}"
         order_item = _to_item(order)
         order_item["correlationId"] = correlation_id
+        if user_email:
+            order_item["userEmail"] = user_email
         outbox_item = {
             "eventId": event_id,
             "eventType": "order-created",
@@ -255,9 +257,11 @@ class OrderRepository:
         stock-reservation command, so an accepted delivery state can never be
         missing its notification record.
         """
-        current = self.get(order_id)
-        if current is None:
+        raw = self.table.get_item(Key={"orderId": order_id}).get("Item")
+        if raw is None:
             raise OrderNotFound(order_id)
+        current = _from_item(raw)
+        user_email = raw.get("userEmail")
         updated = current.model_copy(update={"fulfilmentStatus": target, "updatedAt": utcnow()})
         event_id = f"fulfilment-status-changed#{order_id}#{target.value}"
         outbox_item = {
@@ -267,7 +271,7 @@ class OrderRepository:
             "destination": "EVENTBRIDGE",
             "state": "PENDING",
             "createdAt": updated.updatedAt.isoformat(),
-            "payload": fulfilment_status_changed(updated, correlation_id),
+            "payload": fulfilment_status_changed(updated, correlation_id, user_email),
         }
         try:
             self.resource.meta.client.transact_write_items(

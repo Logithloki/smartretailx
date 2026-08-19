@@ -5,6 +5,7 @@ from decimal import Decimal
 import json
 
 import boto3
+import jwt
 import pytest
 
 from app.events import LocalInlineOutboxPublisher
@@ -360,7 +361,7 @@ def test_only_admin_can_progress_confirmed_order_fulfilment(client, repository):
     assert event["destination"] == "EVENTBRIDGE"
     assert event["payload"]["eventType"] == "fulfilment-status-changed"
     assert event["payload"]["payload"] == {
-        "orderId": order_id, "userId": "user-1", "fulfilmentStatus": "PACKING",
+        "orderId": order_id, "userId": "user-1", "fulfilmentStatus": "PACKING", "userEmail": None,
     }
 
 
@@ -445,3 +446,25 @@ def test_cancellation_and_dispatch_race_allows_exactly_one_transition(client, re
     final = repository.get(order_id)
     assert results in ({"cancelled", "blocked"}, {"dispatched", "blocked"})
     assert not (final.status is OrderStatus.CANCEL_PENDING and final.fulfilmentStatus is FulfilmentStatus.DISPATCHED)
+
+
+def test_user_email_stored_on_order_item_and_threaded_through_fulfilment(client, repository):
+    """userEmail is event-carried state for fulfilment notifications."""
+    token = jwt.encode(
+        {"sub": "user-email-test", "cognito:username": "user-email-test",
+         "cognito:groups": ["customer"], "email": "buyer@example.com"},
+        "unused", algorithm="HS256",
+    )
+    order_id = client.post(
+        "/v1/orders", json=_payload(), headers={"Authorization": f"Bearer {token}"}
+    ).json()["orderId"]
+
+    raw = repository.table.get_item(Key={"orderId": order_id})["Item"]
+    assert raw["userEmail"] == "buyer@example.com"
+
+    repository.set_status(order_id, OrderStatus.CONFIRMED, only_if_pending=True)
+    repository.set_fulfilment(order_id, FulfilmentStatus.NOT_STARTED, FulfilmentStatus.PACKING)
+
+    outbox = boto3.resource("dynamodb", region_name="eu-west-1").Table(OUTBOX_TABLE)
+    event = outbox.get_item(Key={"eventId": f"fulfilment-status-changed#{order_id}#PACKING"})["Item"]
+    assert event["payload"]["payload"]["userEmail"] == "buyer@example.com"
