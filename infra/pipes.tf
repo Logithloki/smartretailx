@@ -154,6 +154,47 @@ resource "aws_lambda_permission" "push_from_events" {
   source_arn    = aws_cloudwatch_event_rule.order_status_changed[0].arn
 }
 
+# ─── EventBridge rule -> notification Lambda (fulfilment emails) ──
+# Customer-facing fulfilment milestones (DISPATCHED, DELIVERED) produce
+# notification emails. The notification Lambda already handles SNS for
+# order-confirmed/rejected/cancelled; this rule adds the EventBridge
+# invocation path for fulfilment events without creating a second notification
+# system (PR H requirement).
+
+resource "aws_cloudwatch_event_rule" "fulfilment_notification" {
+  count          = var.live ? 1 : 0
+  name           = "${var.project_name}-fulfilment-notification"
+  description    = "Route fulfilment status changes to the notification Lambda for customer emails"
+  event_bus_name = aws_cloudwatch_event_bus.orders.name
+
+  event_pattern = jsonencode({
+    source        = ["smartretailx.orders"]
+    "detail-type" = ["fulfilment-status-changed"]
+  })
+
+  tags = {
+    Name = "${var.project_name}-fulfilment-notification"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "fulfilment_notification" {
+  count          = var.live ? 1 : 0
+  rule           = aws_cloudwatch_event_rule.fulfilment_notification[0].name
+  event_bus_name = aws_cloudwatch_event_bus.orders.name
+  target_id      = "notification-lambda"
+  arn            = aws_lambda_alias.notification.arn
+}
+
+resource "aws_lambda_permission" "notification_from_eventbridge" {
+  count         = var.live ? 1 : 0
+  statement_id  = "AllowInvokeFromEventBridgeFulfilment"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.notification.function_name
+  qualifier     = aws_lambda_alias.notification.name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.fulfilment_notification[0].arn
+}
+
 # These stream-driven notifications are deliberately not a pricing authority.
 # The client receives identifiers only and refetches; the Order Service always
 # evaluates enabled/startsAt/endsAt when creating its immutable price snapshot.
