@@ -267,17 +267,19 @@
             "body": { "mode": "raw", "raw": "{\"status\":\"PACKING\"}" },
             "url": "{{apiBaseUrl}}/v1/orders/{{fulfilmentOrderId}}/fulfilment"
           },
-          "event": [{ "listen": "test", "script": { "exec": [
-            "const code = pm.response.code;",
-            "if (pm.environment.get('fulfilmentOrderId')) {",
-            "  pm.test('fulfilment progressed', () => pm.expect(code).to.be.oneOf([200, 409]));",
-            "  if (code === 200) {",
-            "    pm.test('state is PACKING', () => pm.expect(pm.response.json().fulfilmentStatus).to.eql('PACKING'));",
-            "  }",
-            "} else {",
-            "  pm.test.skip('no confirmed order available for fulfilment test');",
-            "}"
-          ] } }]
+          "event": [
+            { "listen": "prerequest", "script": { "exec": [
+              "if (!pm.environment.get('fulfilmentOrderId')) {",
+              "  pm.execution.skipRequest();",
+              "}"
+            ] } },
+            { "listen": "test", "script": { "exec": [
+              "pm.test('fulfilment progressed', () => pm.expect(pm.response.code).to.be.oneOf([200, 409]));",
+              "if (pm.response.code === 200) {",
+              "  pm.test('state is PACKING', () => pm.expect(pm.response.json().fulfilmentStatus).to.eql('PACKING'));",
+              "}"
+            ] } }
+          ]
         }
       ]
     }

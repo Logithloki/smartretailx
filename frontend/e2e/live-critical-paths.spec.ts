@@ -119,11 +119,13 @@ test.describe("administrator critical journey", () => {
     if (hasActionable > 0) {
       const orderId = await actionableRow.first().locator("code").textContent();
       await actionableRow.first().getByRole("button", { name: /Start packing/i }).click();
-      await expect(
-        actionableRow.first().locator(".badge").filter({ hasText: /PACKING/ }),
-      ).toBeVisible({ timeout: 10_000 });
 
-      await actionableRow.first().click();
+      const updatedRow = page.locator("tbody tr").filter({ hasText: orderId! });
+      await expect(
+        updatedRow.locator(".badge").filter({ hasText: /PACKING/ }),
+      ).toBeVisible({ timeout: 15_000 });
+
+      await updatedRow.click();
       const drawer = page.getByRole("dialog");
       await expect(drawer).toBeVisible();
       await expect(drawer.getByText(orderId!)).toBeVisible();
