@@ -309,6 +309,13 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "order_summaries" 
   }
 }
 
+resource "aws_s3_bucket_versioning" "order_summaries" {
+  bucket = aws_s3_bucket.order_summaries.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_lifecycle_configuration" "order_summaries" {
   bucket = aws_s3_bucket.order_summaries.id
 
@@ -320,6 +327,15 @@ resource "aws_s3_bucket_lifecycle_configuration" "order_summaries" {
     }
     noncurrent_version_expiration {
       noncurrent_days = 30
+    }
+  }
+
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
     }
   }
 }
