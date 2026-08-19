@@ -730,6 +730,46 @@ input:disabled, select:disabled, textarea:disabled {
   border: 1px solid var(--rose-border);
 }
 
+/* ─── Stock Availability Badges ─────────────────────────────── */
+.stock-badge-ok {
+  background: var(--emerald-100);
+  color: var(--emerald-600);
+  border: 1px solid var(--emerald-border);
+}
+
+.stock-badge-low {
+  background: var(--amber-100);
+  color: var(--amber-600);
+  border: 1px solid var(--amber-border);
+}
+
+.stock-badge-out {
+  background: var(--rose-100);
+  color: var(--rose-600);
+  border: 1px solid var(--rose-border);
+}
+
+.stock-badge-unknown {
+  background: var(--bg-subtle);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-default);
+}
+
+.stock-qty {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* ─── Stock Row Highlights ──────────────────────────────────── */
+.stock-row-out {
+  background: var(--rose-100);
+  opacity: 0.75;
+}
+
+.stock-row-low {
+  background: var(--amber-100);
+}
+
 /* ─── WebSocket Live Stream Indicator ────────────────────────── */
 .ws-indicator {
   display: inline-flex;
