@@ -134,15 +134,35 @@ export function SmartRetailAuthProvider({
   const signIn = useCallback(
     async (email: string, password: string): Promise<SignInOutput> => {
       setError(null);
-      const result = await amplifySignIn({
-        username: email.trim().toLowerCase(),
-        password,
-        options: {
-          // Amplify default is USER_SRP_AUTH.  Set it explicitly so a future
-          // library change cannot silently regress to plaintext-over-TLS.
-          authFlowType: "USER_SRP_AUTH",
-        },
-      });
+      const attempt = (): Promise<SignInOutput> =>
+        amplifySignIn({
+          username: email.trim().toLowerCase(),
+          password,
+          options: {
+            // Amplify default is USER_SRP_AUTH.  Set it explicitly so a future
+            // library change cannot silently regress to plaintext-over-TLS.
+            authFlowType: "USER_SRP_AUTH",
+          },
+        });
+      let result: SignInOutput;
+      try {
+        result = await attempt();
+      } catch (err) {
+        // Amplify v6 throws UserAlreadyAuthenticatedException when a stale
+        // session is still in storage (e.g. a half-finished earlier attempt).
+        // This otherwise surfaces as the generic "try again" fallback and
+        // strands the user.  Clear the stale session and retry exactly once.
+        if ((err as { name?: string } | null)?.name === "UserAlreadyAuthenticatedException") {
+          try {
+            await amplifySignOut();
+          } catch {
+            // Best-effort; proceed to retry regardless.
+          }
+          result = await attempt();
+        } else {
+          throw err;
+        }
+      }
       // Amplify returns { isSignedIn, nextStep }.  Map the challenge into
       // our state machine.  Never log the session or challenge parameters.
       if (result.isSignedIn) {
