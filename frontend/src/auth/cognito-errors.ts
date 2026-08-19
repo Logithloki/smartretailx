@@ -28,6 +28,14 @@ export function friendlyAuthError(
   context: AuthErrorContext = "signin",
 ): AuthErrorMessage {
   const name = (err as { name?: string } | null)?.name ?? "";
+  // Surface the exception *name* (a constant class identifier, never a
+  // secret, token, password, or user input) so failures are diagnosable
+  // from the browser console instead of vanishing behind a friendly string.
+  if (name) {
+    console.warn(`[auth:${context}] ${name}`);
+  } else {
+    console.warn(`[auth:${context}] unrecognised error`, err);
+  }
   switch (name) {
     // ---- shared ----------------------------------------------------------
     case "NotAuthorizedException":
@@ -81,6 +89,22 @@ export function friendlyAuthError(
       return {
         headline: "Password reset required",
         detail: "You need to reset your password before signing in.",
+      };
+    case "UserAlreadyAuthenticatedException":
+      // Amplify v6 throws this when signIn is called while a session already
+      // exists in storage.  The AuthContext now signs out and retries
+      // automatically, so a user should rarely see this — but map it to a
+      // clear, actionable message rather than the generic fallback.
+      return {
+        headline: "Already signed in",
+        detail:
+          "A previous session is still active. Please refresh the page, or sign out, then try again.",
+      };
+    case "EmptySignInUsername":
+    case "EmptySignInPassword":
+      return {
+        headline: "Missing details",
+        detail: "Please enter both your email and password.",
       };
     // ---- sign-up specific ----------------------------------------------
     case "UsernameExistsException":

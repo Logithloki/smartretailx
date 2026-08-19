@@ -20,6 +20,7 @@ export function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
 
   const passwordMismatch = confirm.length > 0 && password !== confirm;
 
@@ -27,6 +28,7 @@ export function SignUpPage() {
     event.preventDefault();
     if (submitting) return;
     setFormError(null);
+    setVerifyEmail(null);
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !password) {
       setFormError("Please fill in all fields.");
       return;
@@ -64,6 +66,13 @@ export function SignUpPage() {
     } catch (err) {
       const mapped = friendlyAuthError(err, "signup");
       setFormError(mapped.detail ?? mapped.headline);
+      // If the address is already registered it is most often an earlier
+      // attempt that was never confirmed.  Offer a route to the verify
+      // screen so the user is not stranded on a dead-end message.  This is
+      // enumeration-safe: the message itself stays generic.
+      if ((err as { name?: string } | null)?.name === "UsernameExistsException") {
+        setVerifyEmail(email.trim().toLowerCase());
+      }
     } finally {
       setSubmitting(false);
     }
@@ -185,6 +194,20 @@ export function SignUpPage() {
             {submitting ? "Creating account…" : "Create account"}
           </button>
         </form>
+
+        {verifyEmail && (
+          <div className="auth-inline-action">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() =>
+                navigate(`/verify-email?email=${encodeURIComponent(verifyEmail)}`)
+              }
+            >
+              Enter verification code
+            </button>
+          </div>
+        )}
 
         <div className="auth-links">
           <Link to="/login">Back to Sign in</Link>

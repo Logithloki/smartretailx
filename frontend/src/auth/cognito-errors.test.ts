@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { friendlyAuthError } from "./cognito-errors";
 
 describe("friendlyAuthError", () => {
@@ -99,5 +99,31 @@ describe("friendlyAuthError", () => {
   it("maps TooManyFailedAttemptsException to a lockout message", () => {
     const err = Object.assign(new Error(""), { name: "TooManyFailedAttemptsException" });
     expect(friendlyAuthError(err).headline).toMatch(/failed attempts/i);
+  });
+
+  it("maps UserAlreadyAuthenticatedException to an actionable message (not the silent fallback)", () => {
+    const err = Object.assign(new Error(""), { name: "UserAlreadyAuthenticatedException" });
+    const mapped = friendlyAuthError(err);
+    expect(mapped.headline).toBe("Already signed in");
+    expect(mapped.detail).toMatch(/refresh|sign out/i);
+  });
+
+  it("maps Amplify empty-credential validation errors to a clear prompt", () => {
+    for (const name of ["EmptySignInUsername", "EmptySignInPassword"]) {
+      const err = Object.assign(new Error(""), { name });
+      expect(friendlyAuthError(err).headline).toBe("Missing details");
+    }
+  });
+
+  it("logs the exception name to the console for diagnosis (no secret leaked)", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    friendlyAuthError(
+      Object.assign(new Error("secret-ish internal text"), { name: "SomeException" }),
+      "signup",
+    );
+    expect(spy).toHaveBeenCalledWith("[auth:signup] SomeException");
+    // The raw message body is never part of the logged string.
+    expect(spy.mock.calls.flat().join(" ")).not.toMatch(/secret-ish/);
+    spy.mockRestore();
   });
 });
