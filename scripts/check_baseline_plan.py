@@ -10,7 +10,15 @@ from typing import Any, TextIO
 
 
 ALLOWED_REPLACEMENTS = {
-    'aws_ecs_task_definition.services["order"]',
+    # ECS bootstrap task definitions — renamed from services -> bootstrap_services
+    # in PR #8 ("fix: separate ECS release task definitions"). Every env-var or
+    # image change forces a task-definition replacement; ECS keeps every prior
+    # revision, so this is safe. Running services keep the exact revision they
+    # were pinned to at deploy time until the promote workflow rolls them.
+    'aws_ecs_task_definition.bootstrap_services["order"]',
+    'aws_ecs_task_definition.bootstrap_services["inventory"]',
+    'aws_ecs_task_definition.bootstrap_services["product"]',
+    'aws_ecs_task_definition.bootstrap_services["user"]',
     "aws_lambda_permission.notification_sns",
     "aws_lambda_permission.ws_authorizer_invoke",
     "aws_sns_topic_subscription.notification",

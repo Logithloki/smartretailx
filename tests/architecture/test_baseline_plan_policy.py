@@ -24,11 +24,15 @@ PROTECTED_ADDRESSES = (
     "aws_ecs_cluster.main",
 )
 ALLOWED_REPLACEMENTS = (
-    'aws_ecs_task_definition.services["order"]',
+    'aws_ecs_task_definition.bootstrap_services["order"]',
+    'aws_ecs_task_definition.bootstrap_services["inventory"]',
+    'aws_ecs_task_definition.bootstrap_services["product"]',
+    'aws_ecs_task_definition.bootstrap_services["user"]',
     "aws_lambda_permission.notification_sns",
     "aws_lambda_permission.ws_authorizer_invoke",
     "aws_sns_topic_subscription.notification",
 )
+UNKNOWN_ECS_REPLACEMENT = 'aws_ecs_task_definition.bootstrap_services["grafana"]'
 REQUIRED_STATE_ADDRESSES = {
     "aws_vpc.main",
     "aws_ecs_cluster.main",
@@ -71,7 +75,7 @@ def test_policy_rejects_protected_resource_replacement(address: str) -> None:
     assert violations == [f"unapproved delete/replacement: {address}"]
 
 
-def test_policy_accepts_only_the_four_approved_application_replacements() -> None:
+def test_policy_accepts_only_the_approved_application_replacements() -> None:
     policy = _load_policy_module()
 
     violations = policy.evaluate_plan(_plan_with_replacements(*ALLOWED_REPLACEMENTS))
@@ -79,15 +83,54 @@ def test_policy_accepts_only_the_four_approved_application_replacements() -> Non
     assert violations == []
 
 
+@pytest.mark.parametrize(
+    "address",
+    [
+        'aws_ecs_task_definition.bootstrap_services["order"]',
+        'aws_ecs_task_definition.bootstrap_services["inventory"]',
+        'aws_ecs_task_definition.bootstrap_services["product"]',
+        'aws_ecs_task_definition.bootstrap_services["user"]',
+    ],
+)
+def test_policy_allows_each_bootstrap_task_definition_replacement(address: str) -> None:
+    policy = _load_policy_module()
+
+    assert policy.evaluate_plan(_plan_with_replacements(address)) == []
+
+
 def test_policy_rejects_an_unapproved_application_replacement() -> None:
     policy = _load_policy_module()
 
-    violations = policy.evaluate_plan(
-        _plan_with_replacements("aws_ecs_task_definition.grafana")
-    )
+    violations = policy.evaluate_plan(_plan_with_replacements(UNKNOWN_ECS_REPLACEMENT))
+
+    assert violations == [f"unapproved delete/replacement: {UNKNOWN_ECS_REPLACEMENT}"]
+
+
+def test_policy_rejects_stale_pre_rename_task_definition_address() -> None:
+    policy = _load_policy_module()
+    stale_address = 'aws_ecs_task_definition.services["order"]'
+
+    violations = policy.evaluate_plan(_plan_with_replacements(stale_address))
+
+    assert violations == [f"unapproved delete/replacement: {stale_address}"]
+
+
+def test_policy_rejects_pure_destroy_of_a_bootstrap_task_definition() -> None:
+    policy = _load_policy_module()
+    plan = {
+        "resource_changes": [
+            {
+                "address": 'aws_ecs_task_definition.bootstrap_services["order"]',
+                "change": {"actions": ["delete"]},
+            }
+        ]
+    }
+
+    violations = policy.evaluate_plan(plan)
 
     assert violations == [
-        "unapproved delete/replacement: aws_ecs_task_definition.grafana"
+        "approved address is being destroyed without replacement: "
+        'aws_ecs_task_definition.bootstrap_services["order"]'
     ]
 
 
