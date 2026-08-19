@@ -135,7 +135,7 @@ jobs:
             --arg spa_checksum "$spa_checksum" \
             --arg source_workflow "$GITHUB_WORKFLOW" \
             --arg source_run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --arg terraform_version "1.9.5" \
+            --arg terraform_version "1.10.5" \
             --argjson lambda_artifact_checksums "$lambda_checksums" \
             '{release_id:$release_id,git_sha:$git_sha,created_at:$created_at,order_service_digest:$order_service_digest,order_service_image:$order_service_image,inventory_service_digest:$inventory_service_digest,inventory_service_image:$inventory_service_image,product_service_digest:$product_service_digest,product_service_image:$product_service_image,user_service_digest:$user_service_digest,user_service_image:$user_service_image,lambda_artifact_checksums:$lambda_artifact_checksums,lambda_versions:{},spa_checksum:$spa_checksum,source_workflow:$source_workflow,source_run:$source_run,terraform_version:$terraform_version,environments:{}}' \
             > release-manifest.json
