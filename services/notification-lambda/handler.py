@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+from html import escape
 
 import boto3
 from aws_lambda_powertools import Logger, Tracer
@@ -36,6 +37,9 @@ tracer = Tracer(service=SERVICE)
 
 ORDER_CONFIRMED = "order-confirmed"
 ORDER_REJECTED = "order-rejected"
+ORDER_CANCELLED = "order-cancelled"
+
+HANDLED_EVENTS = {ORDER_CONFIRMED, ORDER_REJECTED, ORDER_CANCELLED}
 
 _ses_client = None
 
@@ -78,25 +82,105 @@ def event_payload(event: dict) -> dict:
     }
 
 
-def build_email(event: dict) -> tuple[str, str]:
+def _order_url(order_id: str) -> str | None:
+    base = os.environ.get("FRONTEND_URL", "").rstrip("/")
+    if not base:
+        return None
+    return f"{base}/orders/{order_id}"
+
+
+def build_email(event: dict) -> tuple[str, str, str]:
+    """Return (subject, text_body, html_body) for the given event."""
     event = event_payload(event)
     order_id = event.get("orderId", "unknown")
-    if event.get("eventType") == ORDER_REJECTED:
+    order_url = _order_url(order_id)
+    event_type = event.get("eventType")
+
+    if event_type == ORDER_REJECTED:
         reason = event.get("reason") or "an item was unavailable"
-        return (
-            f"We couldn't complete order {order_id}",
+        subject = f"SmartRetailX - Order {order_id} could not be fulfilled"
+        text_body = (
             f"Unfortunately your order {order_id} could not be fulfilled: {reason}.\n"
-            "Nothing has been charged.\n\nSmartRetailX",
+            "Nothing has been charged.\n\n"
         )
-    return (
-        f"Order {order_id} confirmed",
-        f"Thanks - your order {order_id} is confirmed and being prepared.\n\nSmartRetailX",
-    )
+        heading = "Order could not be fulfilled"
+        status_text = f"We were unable to complete your order: {reason}."
+        status_note = "Nothing has been charged."
+        accent = "#dc2626"
+
+    elif event_type == ORDER_CANCELLED:
+        subject = f"SmartRetailX - Order {order_id} has been cancelled"
+        text_body = (
+            f"Your order {order_id} has been cancelled as requested.\n"
+            "Any reserved stock has been released. Nothing has been charged.\n\n"
+        )
+        heading = "Order cancelled"
+        status_text = "Your order has been cancelled as requested."
+        status_note = "Any reserved stock has been released. Nothing has been charged."
+        accent = "#6b7280"
+
+    else:
+        subject = f"SmartRetailX - Order {order_id} confirmed"
+        text_body = (
+            f"Your order {order_id} is confirmed and being prepared.\n\n"
+        )
+        heading = "Order confirmed"
+        status_text = "Your order is confirmed and being prepared."
+        status_note = None
+        accent = "#059669"
+
+    if order_url:
+        text_body += f"Track your order: {order_url}\n\n"
+    text_body += "SmartRetailX"
+
+    cta_html = ""
+    if order_url:
+        cta_html = (
+            f'<p style="margin:24px 0 0"><a href="{escape(order_url)}" '
+            f'style="display:inline-block;padding:12px 24px;background:{accent};'
+            f'color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">'
+            f'View order</a></p>'
+        )
+
+    note_html = f'<p style="color:#6b7280;font-size:14px;margin:8px 0 0">{escape(status_note)}</p>' if status_note else ""
+
+    html_body = f"""\
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px">
+  <div style="border-bottom:3px solid {accent};padding-bottom:16px;margin-bottom:24px">
+    <h2 style="margin:0;color:#111827;font-size:20px">SmartRetailX</h2>
+  </div>
+  <h1 style="color:#111827;font-size:24px;margin:0 0 16px">{escape(heading)}</h1>
+  <p style="color:#374151;font-size:16px;line-height:1.5;margin:0 0 8px">
+    <strong>Order:</strong> {escape(order_id)}
+  </p>
+  <p style="color:#374151;font-size:16px;line-height:1.5;margin:0">{escape(status_text)}</p>
+  {note_html}
+  {cta_html}
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0 16px">
+  <p style="color:#9ca3af;font-size:12px;margin:0">SmartRetailX &mdash; Enterprise Cloud Application</p>
+</div>"""
+
+    return subject, text_body, html_body
 
 
 def recipient_for(event: dict) -> str | None:
     event = event_payload(event)
     return event.get("userEmail") or os.environ.get("NOTIFICATION_FALLBACK_EMAIL") or None
+
+
+def _send_email(sender: str, to_address: str, subject: str, text_body: str, html_body: str) -> dict:
+    """Send a multipart text+HTML email via SES."""
+    return ses().send_email(
+        Source=sender,
+        Destination={"ToAddresses": [to_address]},
+        Message={
+            "Subject": {"Data": subject, "Charset": "UTF-8"},
+            "Body": {
+                "Text": {"Data": text_body, "Charset": "UTF-8"},
+                "Html": {"Data": html_body, "Charset": "UTF-8"},
+            },
+        },
+    )
 
 
 @tracer.capture_method
@@ -105,31 +189,21 @@ def deliver(event: dict) -> dict:
     without constructing a Lambda event."""
     event = event_payload(event)
     event_type = event.get("eventType")
-    if event_type not in {ORDER_CONFIRMED, ORDER_REJECTED}:
+    if event_type not in HANDLED_EVENTS:
         logger.info("ignoring event", extra={"eventType": event_type})
         return {"sent": False, "reason": "unhandled event type"}
 
     to_address = recipient_for(event)
     if not to_address:
-        # SES sandbox only delivers to verified addresses, so a missing
-        # recipient is a configuration problem worth surfacing, not a crash.
         logger.warning("no recipient for notification", extra={"orderId": event.get("orderId")})
         return {"sent": False, "reason": "no recipient"}
 
-    subject, body = build_email(event)
+    subject, text_body, html_body = build_email(event)
     sender = os.environ["SES_SENDER_EMAIL"]
 
     try:
-        response = ses().send_email(
-            Source=sender,
-            Destination={"ToAddresses": [to_address]},
-            Message={
-                "Subject": {"Data": subject, "Charset": "UTF-8"},
-                "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
-            },
-        )
+        response = _send_email(sender, to_address, subject, text_body, html_body)
     except Exception as e:
-        # Check if this is an SES Sandbox restriction (MessageRejected: Email address is not verified)
         if hasattr(e, "response") and e.response.get("Error", {}).get("Code") == "MessageRejected":
             fallback = os.environ.get("NOTIFICATION_FALLBACK_EMAIL")
             if fallback and fallback != to_address:
@@ -137,21 +211,14 @@ def deliver(event: dict) -> dict:
                     "SES Sandbox restriction: original recipient unverified, rerouting to fallback",
                     extra={"originalTo": to_address, "fallbackTo": fallback, "orderId": event.get("orderId")}
                 )
-                body = f"[SES SANDBOX NOTE: This email was originally intended for {to_address}]\n\n" + body
-                response = ses().send_email(
-                    Source=sender,
-                    Destination={"ToAddresses": [fallback]},
-                    Message={
-                        "Subject": {"Data": subject, "Charset": "UTF-8"},
-                        "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
-                    },
-                )
+                sandbox_prefix = f"[SES SANDBOX NOTE: This email was originally intended for {to_address}]\n\n"
+                response = _send_email(sender, fallback, subject, sandbox_prefix + text_body, html_body)
             else:
                 logger.error("SES Sandbox restriction and no valid fallback", exc_info=True)
                 return {"sent": False, "reason": "unverified recipient in sandbox"}
         else:
             raise
-            
+
     logger.info(
         "notification sent",
         extra={

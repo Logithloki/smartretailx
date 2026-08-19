@@ -300,7 +300,7 @@ class OrderRepository:
         return updated
 
     @_serialize_transition
-    def request_cancellation(self, order_id: str, user_id: str, correlation_id: str) -> Order:
+    def request_cancellation(self, order_id: str, user_id: str, correlation_id: str, user_email: str | None = None) -> Order:
         """Race-safe CONFIRMED/PACKING-or-earlier -> CANCEL_PENDING transition."""
         current = self.get(order_id)
         if current is None:
@@ -310,7 +310,7 @@ class OrderRepository:
         outbox = {
             "eventId": event_id, "eventType": "order-cancel-requested", "aggregateId": order_id,
             "destination": "SQS", "state": "PENDING", "createdAt": updated.updatedAt.isoformat(),
-            "payload": order_cancel_requested(updated, correlation_id),
+            "payload": order_cancel_requested(updated, correlation_id, user_email),
         }
         try:
             self.resource.meta.client.transact_write_items(

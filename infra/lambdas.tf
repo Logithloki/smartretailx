@@ -179,6 +179,7 @@ resource "aws_lambda_function" "notification" {
       IDEMPOTENCY_TABLE_NAME      = aws_dynamodb_table.idempotency.name
       SES_SENDER_EMAIL            = var.ses_sender_email
       NOTIFICATION_FALLBACK_EMAIL = var.notification_fallback_email
+      FRONTEND_URL                = var.frontend_url
       POWERTOOLS_SERVICE_NAME     = "notification-lambda"
       POWERTOOLS_LOG_LEVEL        = "INFO"
     }
@@ -222,12 +223,11 @@ resource "aws_sns_topic_subscription" "notification" {
   protocol  = "lambda"
   endpoint  = aws_lambda_alias.notification.arn
 
-  # Both outcomes are worth an email. The loadTest clause is amendment 21:
-  # Week 7's k6 order-path runs stamp loadTest=true, and SES sandbox allows
-  # ~1 msg/sec and ~200/day - a 50-VU test would throttle SES and flood the
-  # inbox. Filtering server-side means the Lambda is never even invoked.
+  # All customer-facing milestones are worth an email. The loadTest clause is
+  # amendment 21: k6 stamps loadTest=true, and SES sandbox allows ~1 msg/sec
+  # and ~200/day - filtering server-side means the Lambda is never invoked.
   filter_policy = jsonencode({
-    eventType = ["order-confirmed", "order-rejected"]
+    eventType = ["order-confirmed", "order-rejected", "order-cancelled"]
     loadTest  = [{ exists = false }]
   })
 }
