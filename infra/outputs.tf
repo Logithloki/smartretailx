@@ -185,3 +185,8 @@ output "aurora_security_group_id" {
   description = "Aurora security group ID"
   value       = aws_security_group.aurora.id
 }
+
+output "order_summaries_bucket_name" {
+  description = "S3 bucket for order summary PDFs (presigned URL access only)"
+  value       = aws_s3_bucket.order_summaries.bucket
+}

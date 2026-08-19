@@ -19,6 +19,7 @@ class Settings(BaseServiceSettings):
     compensation_consumer_enabled: bool = False
     event_bus_name: str = "smartretailx-events"
     idempotency_ttl_seconds: int = 86400
+    order_summaries_bucket: str = "smartretailx-order-summaries"
 
 
 @lru_cache(maxsize=1)

@@ -10,3 +10,4 @@ aws-lambda-powertools==3.4.0
 opentelemetry-sdk==1.36.0
 opentelemetry-exporter-otlp-proto-grpc==1.36.0
 opentelemetry-instrumentation-fastapi==0.57b0
+fpdf2==2.8.3

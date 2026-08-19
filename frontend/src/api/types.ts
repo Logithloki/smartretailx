@@ -50,6 +50,11 @@ export interface CreateOrderRequest {
   items: Array<Pick<OrderItem, "productId" | "quantity">>;
 }
 
+export interface OrderSummaryResponse {
+  orderId: string;
+  url: string;
+}
+
 export interface Product {
   productId: string;
   productName: string;

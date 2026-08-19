@@ -111,6 +111,11 @@ class OrderListResponse(BaseModel):
     count: int
 
 
+class OrderSummaryResponse(BaseModel):
+    orderId: str
+    url: str
+
+
 class FulfilmentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: FulfilmentStatus

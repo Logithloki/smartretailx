@@ -94,6 +94,7 @@ awslocal sns subscribe \
 
 awslocal s3 mb s3://smartretailx-assets --region eu-west-1
 awslocal s3 mb s3://smartretailx-audit-logs --region eu-west-1
+awslocal s3 mb s3://smartretailx-order-summaries --region eu-west-1
 
 awslocal dynamodb put-item --table-name smartretailx-products --region eu-west-1 \
   --item '{"productId":{"S":"prod-laptop-001"},"productName":{"S":"MacBook Pro 14"},"price":{"N":"1299.99"},"stockQuantity":{"N":"50"},"category":{"S":"Electronics"}}'
