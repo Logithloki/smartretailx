@@ -71,6 +71,11 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.5"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Materialize ws-authorizer Lambda source for terraform archive_file
+        run: bash scripts/build-ws-authorizer-src.sh
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.SMARTRETAILX_TERRAFORM_PLAN_ROLE_ARN }}
@@ -131,6 +136,11 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.5"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Materialize ws-authorizer Lambda source for terraform archive_file
+        run: bash scripts/build-ws-authorizer-src.sh
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.SMARTRETAILX_TERRAFORM_APPLY_ROLE_ARN }}
