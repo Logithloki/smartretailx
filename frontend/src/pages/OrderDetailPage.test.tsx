@@ -216,4 +216,86 @@ describe("OrderDetailPage", () => {
       expect(screen.getByText("Order total")).toBeInTheDocument();
     });
   });
+
+  it("shows Download Order Summary button", async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce(ORDER);
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Download Order Summary/i })).toBeInTheDocument();
+    });
+  });
+
+  it("calls summary API and opens presigned URL on download click", async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(ORDER)
+      .mockResolvedValueOnce({ orderId: "order-abc-123", url: "https://s3.example.com/presigned" });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Download Order Summary/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Download Order Summary/i }));
+
+    await waitFor(() => {
+      expect(vi.mocked(apiFetch)).toHaveBeenCalledWith(
+        "mock-token",
+        "/v1/orders/order-abc-123/summary",
+      );
+    });
+
+    await waitFor(() => {
+      expect(openSpy).toHaveBeenCalledWith("https://s3.example.com/presigned", "_blank", "noopener");
+    });
+
+    openSpy.mockRestore();
+  });
+
+  it("shows Preparing... text while download is in progress", async () => {
+    let resolve: (value: unknown) => void;
+    const pending = new Promise((r) => { resolve = r; });
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(ORDER)
+      .mockReturnValueOnce(pending as Promise<unknown>);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Download Order Summary/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Download Order Summary/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Preparing.../i })).toBeInTheDocument();
+    });
+
+    resolve!({ orderId: "order-abc-123", url: "https://example.com" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Download Order Summary/i })).toBeInTheDocument();
+    });
+  });
+
+  it("shows error when download fails", async () => {
+    const { ApiError } = await import("../api/client");
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(ORDER)
+      .mockRejectedValueOnce(new ApiError(500, "Internal Server Error"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Download Order Summary/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Download Order Summary/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+  });
 });

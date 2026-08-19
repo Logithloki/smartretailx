@@ -194,6 +194,12 @@ resource "aws_iam_role_policy" "order_task" {
         Effect   = "Allow"
         Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
         Resource = [aws_sqs_queue.order_events.arn]
+      },
+      {
+        Sid      = "OrderSummariesBucket"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:HeadObject"]
+        Resource = ["${aws_s3_bucket.order_summaries.arn}/orders/*"]
       }
     ]
   })
