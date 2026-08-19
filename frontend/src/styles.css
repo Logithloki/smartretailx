@@ -798,6 +798,78 @@ input:disabled, select:disabled, textarea:disabled {
   border: 1px solid #fca5a5;
 }
 
+/* ─── Fulfilment Progress Tracker ───────────────────────────── */
+.fulfilment-tracker {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  position: relative;
+  padding: 0.5rem 0;
+}
+
+.fulfilment-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.fulfilment-step::before {
+  content: "";
+  position: absolute;
+  top: 0.5rem;
+  left: calc(-50% + 0.5rem);
+  right: calc(50% + 0.5rem);
+  height: 2px;
+  background: var(--border-default);
+}
+
+.fulfilment-step:first-child::before {
+  display: none;
+}
+
+.fulfilment-step.complete::before {
+  background: var(--emerald-600);
+}
+
+.fulfilment-dot {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+  border: 2px solid var(--border-default);
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.fulfilment-step.complete .fulfilment-dot {
+  background: var(--emerald-600);
+  border-color: var(--emerald-600);
+}
+
+.fulfilment-step.current .fulfilment-dot {
+  box-shadow: 0 0 0 3px var(--emerald-100);
+}
+
+.fulfilment-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-tertiary);
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+.fulfilment-step.complete .fulfilment-label {
+  color: var(--emerald-600);
+}
+
+.fulfilment-step.current .fulfilment-label {
+  color: var(--text-primary);
+}
+
 /* ─── In-App Modern Auth Page Styling ───────────────────────── */
 .auth-page-container {
   min-height: 100vh;
