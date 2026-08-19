@@ -38,8 +38,11 @@ tracer = Tracer(service=SERVICE)
 ORDER_CONFIRMED = "order-confirmed"
 ORDER_REJECTED = "order-rejected"
 ORDER_CANCELLED = "order-cancelled"
+FULFILMENT_STATUS_CHANGED = "fulfilment-status-changed"
 
-HANDLED_EVENTS = {ORDER_CONFIRMED, ORDER_REJECTED, ORDER_CANCELLED}
+HANDLED_EVENTS = {ORDER_CONFIRMED, ORDER_REJECTED, ORDER_CANCELLED, FULFILMENT_STATUS_CHANGED}
+
+NOTIFIABLE_FULFILMENT = {"DISPATCHED", "DELIVERED"}
 
 _ses_client = None
 
@@ -96,7 +99,30 @@ def build_email(event: dict) -> tuple[str, str, str]:
     order_url = _order_url(order_id)
     event_type = event.get("eventType")
 
-    if event_type == ORDER_REJECTED:
+    if event_type == FULFILMENT_STATUS_CHANGED:
+        fulfilment = event.get("fulfilmentStatus", "")
+        if fulfilment == "DISPATCHED":
+            subject = f"SmartRetailX - Order {order_id} has been dispatched"
+            text_body = (
+                f"Your order {order_id} has been dispatched and is on its way.\n\n"
+            )
+            heading = "Order dispatched"
+            status_text = "Your order has been dispatched and is on its way to you."
+            status_note = None
+            accent = "#4f46e5"
+        elif fulfilment == "DELIVERED":
+            subject = f"SmartRetailX - Order {order_id} has been delivered"
+            text_body = (
+                f"Your order {order_id} has been delivered. We hope you enjoy your purchase.\n\n"
+            )
+            heading = "Order delivered"
+            status_text = "Your order has been delivered. We hope you enjoy your purchase."
+            status_note = None
+            accent = "#059669"
+        else:
+            return subject, "", ""
+
+    elif event_type == ORDER_REJECTED:
         reason = event.get("reason") or "an item was unavailable"
         subject = f"SmartRetailX - Order {order_id} could not be fulfilled"
         text_body = (
@@ -193,6 +219,12 @@ def deliver(event: dict) -> dict:
         logger.info("ignoring event", extra={"eventType": event_type})
         return {"sent": False, "reason": "unhandled event type"}
 
+    if event_type == FULFILMENT_STATUS_CHANGED:
+        fulfilment = event.get("fulfilmentStatus", "")
+        if fulfilment not in NOTIFIABLE_FULFILMENT:
+            logger.info("ignoring non-notifiable fulfilment step", extra={"fulfilmentStatus": fulfilment})
+            return {"sent": False, "reason": f"fulfilment step {fulfilment} is not notifiable"}
+
     to_address = recipient_for(event)
     if not to_address:
         logger.warning("no recipient for notification", extra={"orderId": event.get("orderId")})
@@ -266,10 +298,23 @@ def reset_processor() -> None:
     _processor = None
 
 
+def _is_eventbridge_invocation(event: dict) -> bool:
+    return "detail-type" in event and "detail" in event and "Records" not in event
+
+
 @logger.inject_lambda_context(log_event=False)
 @tracer.capture_lambda_handler
 def lambda_handler(event: dict, context) -> dict:
     _idempotency_config.register_lambda_context(context)
+
+    if _is_eventbridge_invocation(event):
+        detail = event["detail"]
+        correlation_id = detail.get("correlationId")
+        if correlation_id:
+            logger.set_correlation_id(correlation_id)
+        result = deliver(detail)
+        return {"processed": 1, "results": [result]}
+
     process = get_processor()
 
     results = []

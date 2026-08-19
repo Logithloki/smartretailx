@@ -53,7 +53,7 @@ def order_created_command(
     ).model_dump(mode="json")
 
 
-def fulfilment_status_changed(order: Order, correlation_id: str) -> dict:
+def fulfilment_status_changed(order: Order, correlation_id: str, user_email: str | None = None) -> dict:
     return new_event(
         event_type="fulfilment-status-changed",
         event_id=f"fulfilment-status-changed#{order.orderId}#{order.fulfilmentStatus.value}",
@@ -63,6 +63,7 @@ def fulfilment_status_changed(order: Order, correlation_id: str) -> dict:
             "orderId": order.orderId,
             "userId": order.userId,
             "fulfilmentStatus": order.fulfilmentStatus.value,
+            "userEmail": user_email,
         },
     ).model_dump(mode="json")
 

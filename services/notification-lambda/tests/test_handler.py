@@ -368,3 +368,152 @@ def test_each_milestone_has_distinct_subject():
         subject, _, _ = h.build_email(domain_event(event_type))
         subjects.add(subject)
     assert len(subjects) == 3, "each milestone should produce a distinct subject line"
+
+
+# --------------------------------------------------------------------------
+# email content - fulfilment dispatched
+# --------------------------------------------------------------------------
+
+def test_dispatched_email_mentions_order_and_dispatch():
+    subject, text, html = h.build_email(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DISPATCHED")
+    )
+    assert "ord-abc123" in subject
+    assert "dispatched" in subject.lower()
+    assert "dispatched" in text.lower()
+
+
+def test_dispatched_email_has_smartretailx_branding():
+    subject, text, html = h.build_email(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DISPATCHED")
+    )
+    assert "SmartRetailX" in subject
+    assert "SmartRetailX" in text
+    assert "SmartRetailX" in html
+
+
+def test_dispatched_email_has_cta_link():
+    _, text, html = h.build_email(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DISPATCHED")
+    )
+    expected_url = f"{FRONTEND_URL}/orders/ord-abc123"
+    assert expected_url in text
+    assert expected_url in html
+
+
+def test_dispatched_email_no_payment_claims():
+    _, text, html = h.build_email(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DISPATCHED")
+    )
+    for forbidden in ["payment successful", "payment completed", "paid",
+                       "payment confirmed", "payment receipt"]:
+        assert forbidden not in text.lower()
+        assert forbidden not in html.lower()
+
+
+# --------------------------------------------------------------------------
+# email content - fulfilment delivered
+# --------------------------------------------------------------------------
+
+def test_delivered_email_mentions_order_and_delivery():
+    subject, text, html = h.build_email(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DELIVERED")
+    )
+    assert "ord-abc123" in subject
+    assert "delivered" in subject.lower()
+    assert "delivered" in text.lower()
+
+
+def test_delivered_email_has_smartretailx_branding():
+    subject, text, html = h.build_email(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DELIVERED")
+    )
+    assert "SmartRetailX" in subject
+    assert "SmartRetailX" in text
+    assert "SmartRetailX" in html
+
+
+def test_delivered_email_has_cta_link():
+    _, text, html = h.build_email(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DELIVERED")
+    )
+    expected_url = f"{FRONTEND_URL}/orders/ord-abc123"
+    assert expected_url in text
+
+
+def test_delivered_email_no_payment_claims():
+    _, text, html = h.build_email(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DELIVERED")
+    )
+    for forbidden in ["payment successful", "payment completed", "paid",
+                       "payment confirmed", "payment receipt"]:
+        assert forbidden not in text.lower()
+        assert forbidden not in html.lower()
+
+
+# --------------------------------------------------------------------------
+# fulfilment delivery filtering
+# --------------------------------------------------------------------------
+
+def test_dispatched_sends_email(ses_verified):
+    result = h.deliver(domain_event("fulfilment-status-changed", fulfilmentStatus="DISPATCHED"))
+    assert result["sent"] is True
+    assert sent_count(ses_verified) == 1
+
+
+def test_delivered_sends_email(ses_verified):
+    result = h.deliver(domain_event("fulfilment-status-changed", fulfilmentStatus="DELIVERED"))
+    assert result["sent"] is True
+
+
+def test_packing_does_not_send_email(ses_verified):
+    result = h.deliver(domain_event("fulfilment-status-changed", fulfilmentStatus="PACKING"))
+    assert result["sent"] is False
+    assert sent_count(ses_verified) == 0
+
+
+def test_not_started_does_not_send_email(ses_verified):
+    result = h.deliver(domain_event("fulfilment-status-changed", fulfilmentStatus="NOT_STARTED"))
+    assert result["sent"] is False
+
+
+# --------------------------------------------------------------------------
+# EventBridge invocation format
+# --------------------------------------------------------------------------
+
+def _eventbridge_event(event: dict) -> dict:
+    return {
+        "version": "0",
+        "id": "eb-test-1",
+        "source": "smartretailx.orders",
+        "detail-type": "fulfilment-status-changed",
+        "detail": event,
+    }
+
+
+def test_eventbridge_invocation_dispatched(ses_verified, idempotency_table):
+    eb_event = _eventbridge_event(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="DISPATCHED")
+    )
+    result = h.lambda_handler(eb_event, Context())
+    assert result["processed"] == 1
+    assert sent_count(ses_verified) == 1
+
+
+def test_eventbridge_invocation_packing_skipped(ses_verified, idempotency_table):
+    eb_event = _eventbridge_event(
+        domain_event("fulfilment-status-changed", fulfilmentStatus="PACKING")
+    )
+    result = h.lambda_handler(eb_event, Context())
+    assert result["processed"] == 1
+    assert sent_count(ses_verified) == 0
+
+
+def test_fulfilment_milestones_have_distinct_subjects():
+    subjects = set()
+    for status in ["DISPATCHED", "DELIVERED"]:
+        subject, _, _ = h.build_email(
+            domain_event("fulfilment-status-changed", fulfilmentStatus=status)
+        )
+        subjects.add(subject)
+    assert len(subjects) == 2
