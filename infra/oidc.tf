@@ -204,6 +204,16 @@ resource "aws_iam_role_policy" "gha_release" {
 # Read-only planning is deliberately separate from deployment. The only
 # writes allowed are the S3 lockfile operations Terraform needs while reading
 # remote state; this role cannot apply infrastructure changes.
+#
+# Trust must accept both subject styles GitHub emits:
+#   - ref:refs/heads/main   — jobs run on the main branch without an
+#                             environment pin (e.g. the immutable release
+#                             build's plan gate).
+#   - environment:<env>     — jobs pinned to a GitHub Environment
+#                             (baseline-release.yml pins its plan and apply
+#                             jobs to `environment: development`, so the
+#                             OIDC sub becomes environment-scoped).
+# Both are restricted to this exact repo. No wildcard trust.
 resource "aws_iam_role" "gha_terraform_plan" {
   name = "${var.project_name}-gha-terraform-plan"
   assume_role_policy = jsonencode({
@@ -215,7 +225,10 @@ resource "aws_iam_role" "gha_terraform_plan" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_repo}:ref:refs/heads/main",
+            "repo:${var.github_repo}:environment:${local.github_deploy_environment}",
+          ]
         }
       }
     }]
@@ -250,6 +263,167 @@ resource "aws_iam_role_policy" "gha_terraform_plan_state_lock" {
       },
     ]
   })
+}
+
+# ─── Terraform apply role ─────────────────────────────────────
+#
+# Separate from the plan role and from the deploy role. Only the reviewed
+# `baseline-release.yml` workflow (or its Test/Staging equivalents) may assume
+# it, because the trust is pinned to the GitHub Environment subject of the
+# environment being deployed. The Environment's protection rules — required
+# reviewers, wait timers, deployment branches — are the runtime gate.
+#
+# Policy is broad by necessity: Terraform apply mutates the full account
+# footprint this project owns (VPC, ECS, RDS/Aurora, DynamoDB, IAM, S3,
+# CloudFront, Cognito, EventBridge, SQS, SNS, Lambda, ECR, CloudWatch,
+# Secrets Manager, KMS). Attempting to enumerate every action would be a
+# maintenance burden that reduces safety, not increases it. The safety
+# boundary is the Environment approval gate and the `check_baseline_plan.py`
+# guard that rejects any unapproved delete/replacement.
+resource "aws_iam_role" "gha_terraform_apply" {
+  name = "${var.project_name}-gha-terraform-apply"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = local.github_oidc_provider_arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:environment:${local.github_deploy_environment}"
+        }
+      }
+    }]
+  })
+
+  max_session_duration = 3600
+
+  tags = {
+    Name = "${var.project_name}-gha-terraform-apply"
+  }
+}
+
+# PowerUserAccess covers every non-IAM/Organizations service Terraform touches.
+# IAM management is granted separately below, scoped to smartretailx-* names.
+resource "aws_iam_role_policy_attachment" "gha_terraform_apply_poweruser" {
+  role       = aws_iam_role.gha_terraform_apply.name
+  policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
+}
+
+resource "aws_iam_role_policy" "gha_terraform_apply_iam" {
+  name = "terraform-iam-scoped"
+  role = aws_iam_role.gha_terraform_apply.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # IAM role/policy/instance-profile management scoped to project names.
+        # PassRole is scoped identically so a leaked apply token cannot pass
+        # arbitrary roles to services.
+        Sid    = "ScopedIamManagement"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:DeleteRole",
+          "iam:GetRole",
+          "iam:UpdateRole",
+          "iam:UpdateRoleDescription",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:ListAttachedRolePolicies",
+          "iam:PassRole",
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:GetInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:CreatePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicy",
+          "iam:DeletePolicyVersion",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListPolicyVersions",
+          "iam:SetDefaultPolicyVersion",
+          "iam:ListPolicies",
+          "iam:ListRoles",
+          "iam:CreateServiceLinkedRole",
+          "iam:DeleteServiceLinkedRole",
+          "iam:GetServiceLinkedRoleDeletionStatus",
+        ]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${var.project_name}-*",
+        ]
+      },
+      {
+        # Read-only enumeration across IAM is required for terraform plan
+        # to discover existing state (drift detection). This grants no
+        # ability to mutate anything.
+        Sid    = "IamRead"
+        Effect = "Allow"
+        Action = [
+          "iam:GetAccountSummary",
+          "iam:ListAccountAliases",
+          "iam:GetOpenIDConnectProvider",
+          "iam:ListOpenIDConnectProviders",
+          "iam:GetSAMLProvider",
+          "iam:ListSAMLProviders",
+        ]
+        Resource = "*"
+      },
+      {
+        # The OIDC provider is a baseline singleton; permit management of
+        # the exact GitHub Actions provider only.
+        Sid    = "GithubOidcProvider"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateOpenIDConnectProvider",
+          "iam:DeleteOpenIDConnectProvider",
+          "iam:UpdateOpenIDConnectProviderThumbprint",
+          "iam:AddClientIDToOpenIDConnectProvider",
+          "iam:RemoveClientIDFromOpenIDConnectProvider",
+          "iam:TagOpenIDConnectProvider",
+          "iam:UntagOpenIDConnectProvider",
+        ]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
+        ]
+      },
+      {
+        # Terraform apply must read+write its own state and lock files.
+        Sid      = "TerraformStateBucketList"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketVersioning"]
+        Resource = "arn:aws:s3:::smartretailx-tfstate-322551984077"
+      },
+      {
+        Sid    = "TerraformStateObjects"
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = [
+          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate",
+          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate.tflock",
+          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate",
+          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate.tflock",
+        ]
+      },
+    ]
+  })
+}
+
+output "github_terraform_apply_role_arn" {
+  description = "Reviewed-workflow Terraform apply role ARN (per environment)"
+  value       = aws_iam_role.gha_terraform_apply.arn
 }
 
 # ─── Deploy permissions ───────────────────────────────────────
