@@ -100,7 +100,7 @@ export function MfaSetupPage() {
           <button
             type="button"
             className="auth-submit-btn"
-            onClick={() => navigate("/profile/security", { replace: true })}
+            onClick={() => navigate("/profile", { replace: true })}
           >
             Back to Security
           </button>
@@ -202,7 +202,7 @@ export function MfaSetupPage() {
         </form>
 
         <div className="auth-links">
-          <Link to="/profile/security">Cancel setup</Link>
+          <Link to="/profile">Cancel setup</Link>
           <button
             type="button"
             className="linkish"

@@ -15,7 +15,7 @@ import { SignUpPage } from "./pages/SignUpPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { SecurityPage } from "./pages/SecurityPage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { MfaSetupPage } from "./pages/MfaSetupPage";
 import { MfaChallengePage } from "./pages/MfaChallengePage";
 import { useIsAdmin } from "./hooks/useIsAdmin";
@@ -221,12 +221,12 @@ export default function App() {
                 </span>
               </div>
               <Link
-                to="/profile/security"
+                to="/profile"
                 className="btn btn-secondary btn-sm"
-                aria-label="Security settings"
+                aria-label="Profile settings"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                Security
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                Profile
               </Link>
               <button
                 className="btn btn-secondary btn-sm"
@@ -317,10 +317,10 @@ export default function App() {
             }
           />
           <Route
-            path="/profile/security"
+            path="/profile"
             element={
               <ProtectedRoute>
-                <SecurityPage />
+                <ProfilePage />
               </ProtectedRoute>
             }
           />
