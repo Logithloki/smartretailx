@@ -67,11 +67,11 @@ def fulfilment_status_changed(order: Order, correlation_id: str) -> dict:
     ).model_dump(mode="json")
 
 
-def order_cancel_requested(order: Order, correlation_id: str) -> dict:
+def order_cancel_requested(order: Order, correlation_id: str, user_email: str | None = None) -> dict:
     return new_event(
         event_type="order-cancel-requested", event_id=f"order-cancel-requested#{order.orderId}",
         aggregate_id=order.orderId, correlation_id=correlation_id,
-        payload={"orderId": order.orderId, "userId": order.userId, "items": [
+        payload={"orderId": order.orderId, "userId": order.userId, "userEmail": user_email, "items": [
             {"productId": item.productId, "quantity": item.quantity} for item in order.items
         ]},
     ).model_dump(mode="json")

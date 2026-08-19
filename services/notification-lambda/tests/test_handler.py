@@ -12,6 +12,7 @@ import handler as h
 SENDER = "noreply@example.com"
 CUSTOMER = "customer@example.com"
 IDEMPOTENCY_TABLE = "test-idempotency"
+FRONTEND_URL = "https://d1p906ifpq8jeg.cloudfront.net"
 
 
 class Context:
@@ -42,6 +43,7 @@ def env(monkeypatch):
         "APP_REGION": "eu-west-1",
         "SES_SENDER_EMAIL": SENDER,
         "IDEMPOTENCY_TABLE_NAME": IDEMPOTENCY_TABLE,
+        "FRONTEND_URL": FRONTEND_URL,
         "POWERTOOLS_TRACE_DISABLED": "true",
         "POWERTOOLS_SERVICE_NAME": "notification-lambda",
     }.items():
@@ -115,26 +117,135 @@ def sent_count(client) -> int:
 
 
 # --------------------------------------------------------------------------
-# email content
+# email content - confirmed
 # --------------------------------------------------------------------------
 
 def test_confirmed_email_mentions_the_order():
-    subject, body = h.build_email(domain_event())
+    subject, text, html = h.build_email(domain_event())
     assert "ord-abc123" in subject
     assert "confirmed" in subject.lower()
 
 
-def test_rejected_email_carries_the_reason_and_reassures_about_payment():
-    subject, body = h.build_email(
+def test_confirmed_email_text_body_has_order_id():
+    _, text, _ = h.build_email(domain_event())
+    assert "ord-abc123" in text
+    assert "confirmed" in text.lower()
+
+
+def test_confirmed_email_has_smartretailx_branding():
+    subject, text, html = h.build_email(domain_event())
+    assert "SmartRetailX" in subject
+    assert "SmartRetailX" in text
+    assert "SmartRetailX" in html
+
+
+def test_confirmed_email_has_cta_link():
+    _, text, html = h.build_email(domain_event())
+    expected_url = f"{FRONTEND_URL}/orders/ord-abc123"
+    assert expected_url in text
+    assert expected_url in html
+
+
+def test_confirmed_email_no_payment_claims():
+    _, text, html = h.build_email(domain_event())
+    for forbidden in ["payment successful", "payment completed", "paid", "payment confirmed",
+                       "payment receipt", "payment transaction"]:
+        assert forbidden not in text.lower(), f"text body contains forbidden phrase: {forbidden}"
+        assert forbidden not in html.lower(), f"HTML body contains forbidden phrase: {forbidden}"
+
+
+# --------------------------------------------------------------------------
+# email content - rejected
+# --------------------------------------------------------------------------
+
+def test_rejected_email_carries_the_reason_and_reassures_about_charges():
+    subject, text, html = h.build_email(
         domain_event("order-rejected", reason="insufficient stock for p1")
     )
-    assert "insufficient stock for p1" in body
-    assert "charged" in body.lower()
+    assert "insufficient stock for p1" in text
+    assert "charged" in text.lower()
 
 
 def test_rejected_email_has_a_reason_even_when_none_is_supplied():
-    _, body = h.build_email(domain_event("order-rejected", reason=None))
-    assert "unavailable" in body.lower()
+    _, text, _ = h.build_email(domain_event("order-rejected", reason=None))
+    assert "unavailable" in text.lower()
+
+
+def test_rejected_email_no_payment_claims():
+    _, text, html = h.build_email(domain_event("order-rejected", reason="out of stock"))
+    for forbidden in ["payment successful", "payment completed", "payment receipt"]:
+        assert forbidden not in text.lower()
+        assert forbidden not in html.lower()
+
+
+# --------------------------------------------------------------------------
+# email content - cancelled
+# --------------------------------------------------------------------------
+
+def test_cancelled_email_mentions_order_and_cancellation():
+    subject, text, html = h.build_email(domain_event("order-cancelled"))
+    assert "ord-abc123" in subject
+    assert "cancelled" in subject.lower()
+    assert "cancelled" in text.lower()
+
+
+def test_cancelled_email_confirms_no_charge():
+    _, text, html = h.build_email(domain_event("order-cancelled"))
+    assert "charged" in text.lower()
+
+
+def test_cancelled_email_has_cta_link():
+    _, text, html = h.build_email(domain_event("order-cancelled"))
+    expected_url = f"{FRONTEND_URL}/orders/ord-abc123"
+    assert expected_url in text
+
+
+def test_cancelled_email_no_payment_claims():
+    _, text, html = h.build_email(domain_event("order-cancelled"))
+    for forbidden in ["payment successful", "payment completed", "paid ",
+                       "payment confirmed", "payment receipt"]:
+        assert forbidden not in text.lower()
+        assert forbidden not in html.lower()
+
+
+def test_cancelled_email_has_smartretailx_branding():
+    subject, text, html = h.build_email(domain_event("order-cancelled"))
+    assert "SmartRetailX" in subject
+    assert "SmartRetailX" in text
+    assert "SmartRetailX" in html
+
+
+# --------------------------------------------------------------------------
+# HTML structure
+# --------------------------------------------------------------------------
+
+def test_html_body_is_well_formed():
+    _, _, html = h.build_email(domain_event())
+    assert html.startswith("<div")
+    assert "</div>" in html
+    assert "View order" in html
+
+
+def test_html_body_includes_order_reference():
+    _, _, html = h.build_email(domain_event())
+    assert "ord-abc123" in html
+
+
+def test_html_body_escapes_special_characters():
+    _, _, html = h.build_email(domain_event("order-rejected", reason='<script>alert("xss")</script>'))
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+# --------------------------------------------------------------------------
+# CTA link when FRONTEND_URL is empty
+# --------------------------------------------------------------------------
+
+def test_no_cta_when_frontend_url_is_empty(monkeypatch):
+    monkeypatch.setenv("FRONTEND_URL", "")
+    _, text, html = h.build_email(domain_event())
+    assert "View order" not in html
+    assert "/orders/" not in text
 
 
 # --------------------------------------------------------------------------
@@ -174,8 +285,19 @@ def test_rejected_event_also_sends_an_email(ses_verified):
     assert sent_count(ses_verified) == 1
 
 
+def test_cancelled_event_sends_an_email(ses_verified):
+    assert h.deliver(domain_event("order-cancelled"))["sent"] is True
+    assert sent_count(ses_verified) == 1
+
+
 def test_unrelated_event_types_are_ignored(ses_verified):
     result = h.deliver(domain_event("order-created"))
+    assert result["sent"] is False
+    assert sent_count(ses_verified) == 0
+
+
+def test_fulfilment_event_is_ignored(ses_verified):
+    result = h.deliver(domain_event("fulfilment-status-changed"))
     assert result["sent"] is False
     assert sent_count(ses_verified) == 0
 
@@ -218,5 +340,31 @@ def test_handler_handles_a_batch(ses_verified, idempotency_table):
     assert sent_count(ses_verified) == 2
 
 
+def test_cancelled_handler_idempotent(ses_verified, idempotency_table):
+    event = sns_event(domain_event("order-cancelled"), message_id="msg-cancel-dup")
+    h.lambda_handler(event, Context())
+    h.lambda_handler(event, Context())
+    assert sent_count(ses_verified) == 1
+
+
 def test_unwrap_sns_reads_the_message_body():
     assert h.unwrap_sns(sns_event(domain_event())["Records"][0])["aggregateId"] == "ord-abc123"
+
+
+# --------------------------------------------------------------------------
+# milestone mapping completeness
+# --------------------------------------------------------------------------
+
+def test_all_handled_events_produce_emails(ses_verified):
+    for event_type in ["order-confirmed", "order-rejected", "order-cancelled"]:
+        h._ses_client = None
+        result = h.deliver(domain_event(event_type))
+        assert result["sent"] is True, f"{event_type} did not send"
+
+
+def test_each_milestone_has_distinct_subject():
+    subjects = set()
+    for event_type in ["order-confirmed", "order-rejected", "order-cancelled"]:
+        subject, _, _ = h.build_email(domain_event(event_type))
+        subjects.add(subject)
+    assert len(subjects) == 3, "each milestone should produce a distinct subject line"

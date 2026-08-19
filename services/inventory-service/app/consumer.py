@@ -59,8 +59,9 @@ class InventoryConsumer:
             return False
 
         if event.eventType == "order-cancel-requested":
+            cancel_email = event.payload.get("userEmail") if event.payload else None
             try:
-                result = self._stock.release_reservation(event.aggregateId, event.correlationId)
+                result = self._stock.release_reservation(event.aggregateId, event.correlationId, user_email=cancel_email)
             except pybreaker.CircuitBreakerError:
                 return False
             except Exception:

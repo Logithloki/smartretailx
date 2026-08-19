@@ -234,7 +234,7 @@ def create_app(
     @app.post("/v1/orders/{order_id}/cancel", response_model=Order, tags=["orders"])
     def cancel_order(order_id: str, user: Principal = Depends(auth.current_user)) -> Order:
         try:
-            return repo.request_cancellation(order_id, user.subject, set_correlation_id())
+            return repo.request_cancellation(order_id, user.subject, set_correlation_id(), user_email=user.email)
         except OrderNotFound:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="order not found") from None
         except OrderNotPending:
