@@ -15,6 +15,9 @@ import { SignUpPage } from "./pages/SignUpPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { SecurityPage } from "./pages/SecurityPage";
+import { MfaSetupPage } from "./pages/MfaSetupPage";
+import { MfaChallengePage } from "./pages/MfaChallengePage";
 import { useIsAdmin } from "./hooks/useIsAdmin";
 import { useCart } from "./context/CartContext";
 import { createCognitoLogoutUrl } from "./auth-config";
@@ -106,6 +109,11 @@ export default function App() {
             <Route path="/verify-email" element={<VerifyEmailPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            {/* MFA challenge/setup during sign-in: the user is not yet
+                fully authenticated, but Amplify is holding a pending
+                session. */}
+            <Route path="/auth/mfa" element={<MfaChallengePage />} />
+            <Route path="/auth/mfa/setup" element={<MfaSetupPage />} />
             <Route path="/callback" element={<CallbackPage />} />
             <Route path="*" element={<SignInPage />} />
           </Routes>
@@ -212,6 +220,14 @@ export default function App() {
                   {isAdmin ? "Admin" : "Customer"}
                 </span>
               </div>
+              <Link
+                to="/profile/security"
+                className="btn btn-secondary btn-sm"
+                aria-label="Security settings"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Security
+              </Link>
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => void signOut()}
@@ -298,6 +314,22 @@ export default function App() {
               <AdminRoute>
                 <AdminUsersPage />
               </AdminRoute>
+            }
+          />
+          <Route
+            path="/profile/security"
+            element={
+              <ProtectedRoute>
+                <SecurityPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/auth/mfa/setup"
+            element={
+              <ProtectedRoute>
+                <MfaSetupPage />
+              </ProtectedRoute>
             }
           />
           <Route path="/login" element={<SignInPage />} />

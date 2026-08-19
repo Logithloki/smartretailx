@@ -5,6 +5,12 @@ import { SignInPage } from "./SignInPage";
 import { AuthContext, type AuthApi } from "../auth/AuthContext";
 import type { SignInOutput } from "aws-amplify/auth";
 
+const navigateMock = vi.fn();
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  return { ...actual, useNavigate: () => navigateMock };
+});
+
 function makeAuth(overrides: Partial<AuthApi> = {}): AuthApi {
   return {
     status: "unauthenticated",
@@ -91,7 +97,7 @@ describe("SignInPage", () => {
     });
   });
 
-  it("shows a challenge notice for CONFIRM_SIGN_IN_WITH_TOTP_CODE and does not crash", async () => {
+  it("navigates to /auth/mfa on CONFIRM_SIGN_IN_WITH_TOTP_CODE (PR C)", async () => {
     const signIn = vi.fn().mockResolvedValue({
       isSignedIn: false,
       nextStep: { signInStep: "CONFIRM_SIGN_IN_WITH_TOTP_CODE" },
@@ -100,12 +106,10 @@ describe("SignInPage", () => {
     fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "u@e.com" } });
     fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: "goodPass1!X" } });
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/multi-factor authentication is required/i),
-    );
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/auth/mfa"));
   });
 
-  it("shows a challenge notice for CONTINUE_SIGN_IN_WITH_TOTP_SETUP", async () => {
+  it("navigates to /auth/mfa/setup on CONTINUE_SIGN_IN_WITH_TOTP_SETUP (PR C)", async () => {
     const signIn = vi.fn().mockResolvedValue({
       isSignedIn: false,
       nextStep: { signInStep: "CONTINUE_SIGN_IN_WITH_TOTP_SETUP" },
@@ -114,9 +118,7 @@ describe("SignInPage", () => {
     fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "u@e.com" } });
     fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: "goodPass1!X" } });
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/setup screen will land/i),
-    );
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/auth/mfa/setup"));
   });
 
   it("shows a challenge notice for CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED", async () => {
