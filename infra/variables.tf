@@ -125,6 +125,12 @@ variable "notification_fallback_email" {
   default     = ""
 }
 
+variable "frontend_url" {
+  description = "Public URL of the SPA (e.g. https://d1p906ifpq8jeg.cloudfront.net). Used in notification emails as the CTA link base."
+  type        = string
+  default     = ""
+}
+
 # The GitHub repository whose workflows can assume the deploy role via
 # OIDC. Format is "owner/repo". Kept as a variable (rather than baked in)
 # so a fork or an owner rename does not require editing infra code; also

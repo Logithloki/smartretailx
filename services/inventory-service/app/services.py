@@ -164,7 +164,7 @@ class StockRepository:
             session.commit()
             return ProcessingOutcome(eventType=event_type, reason=result.reason)
 
-    def release_reservation(self, order_id: str, correlation_id: str) -> ProcessingOutcome:
+    def release_reservation(self, order_id: str, correlation_id: str, user_email: str | None = None) -> ProcessingOutcome:
         """Release only persisted RESERVED rows, retaining RELEASED evidence."""
         outcome_id = f"inventory-cancelled#{order_id}"
         with self._session_factory() as session:
@@ -184,7 +184,7 @@ class StockRepository:
                 row.released_at = utcnow()
             payload = new_event(
                 event_type="order-cancelled", event_id=outcome_id, aggregate_id=order_id,
-                correlation_id=correlation_id, payload={"orderId": order_id},
+                correlation_id=correlation_id, payload={"orderId": order_id, "userEmail": user_email},
             ).model_dump(mode="json")
             session.merge(InventoryOutboxEvent(
                 event_id=outcome_id, event_type="order-cancelled", aggregate_id=order_id, payload=payload
