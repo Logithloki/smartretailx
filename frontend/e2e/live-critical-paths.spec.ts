@@ -73,6 +73,37 @@ test.describe("customer critical journey", () => {
     );
   });
 
+  test("customer can download order summary from order detail", async ({ page }) => {
+    await hostedUiLogin(page, customer);
+
+    await page.getByRole("link", { name: /Orders/i }).click();
+    await expect(page.getByRole("heading", { name: /My Orders/ })).toBeVisible();
+
+    const firstRow = page.locator("tbody tr").first();
+    const hasOrders = await firstRow.isVisible().catch(() => false);
+    if (!hasOrders) {
+      test.skip();
+      return;
+    }
+
+    await firstRow.locator("a").first().click();
+    await expect(page.getByRole("heading", { name: /Order/ })).toBeVisible();
+
+    const downloadBtn = page.getByRole("button", { name: /Download Order Summary/i });
+    await expect(downloadBtn).toBeVisible();
+
+    const [popup] = await Promise.all([
+      page.waitForEvent("popup", { timeout: 15_000 }).catch(() => null),
+      downloadBtn.click(),
+    ]);
+
+    if (popup) {
+      const url = popup.url();
+      expect(url).toContain("X-Amz-Signature");
+      await popup.close();
+    }
+  });
+
   test("customer is blocked from admin UI and admin API", async ({ page }) => {
     await hostedUiLogin(page, customer);
     await page.goto(`${baseURL}/admin/products`);

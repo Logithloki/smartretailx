@@ -270,6 +270,7 @@ locals {
         # consumer thread simply never starts.
         ORDER_EVENTS_QUEUE_URL        = aws_sqs_queue.order_events.url
         COMPENSATION_CONSUMER_ENABLED = "true"
+        ORDER_SUMMARIES_BUCKET        = aws_s3_bucket.order_summaries.bucket
       }
       secrets = {}
     }

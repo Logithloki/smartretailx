@@ -11,6 +11,7 @@ from srx_common import Authenticator, Principal, configure_logging, instrument_f
 
 from .compensation import CompensationConsumer
 from .config import Settings, get_settings
+from .documents import DocumentStore
 from .events import LocalInlineOutboxPublisher
 from .idempotency import (
     IdempotencyConflict,
@@ -25,6 +26,7 @@ from .models import (
     FulfilmentUpdate,
     Order,
     OrderListResponse,
+    OrderSummaryResponse,
 )
 from .pricing import PricingCatalog, PricingUnavailable, ProductUnavailable
 from .services import OrderNotFound, OrderNotPending, OrderRepository
@@ -42,6 +44,7 @@ def create_app(
     configure_logging(settings.service_name, settings.log_level)
 
     repo = repository or OrderRepository(settings)
+    docs = DocumentStore(settings)
     keys = idempotency or IdempotencyStore(settings)
     prices = pricing or PricingCatalog(settings)
     local_outbox = (
@@ -210,6 +213,23 @@ def create_app(
             # someone else leaks information about other customers.
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="order not found")
         return order
+
+    @app.get(
+        "/v1/orders/{order_id}/summary",
+        response_model=OrderSummaryResponse,
+        tags=["orders"],
+        summary="Get a presigned URL for the order summary PDF",
+    )
+    def get_order_summary(
+        order_id: str, user: Principal = Depends(auth.current_user),
+    ) -> OrderSummaryResponse:
+        order = repo.get(order_id)
+        if order is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="order not found")
+        if order.userId != user.subject and not user.in_group("admin"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="order not found")
+        url = docs.get_summary_url(order)
+        return OrderSummaryResponse(orderId=order.orderId, url=url)
 
     @app.patch(
         "/v1/orders/{order_id}/fulfilment", response_model=Order, tags=["fulfilment"],

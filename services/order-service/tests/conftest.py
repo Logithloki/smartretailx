@@ -15,6 +15,7 @@ IDEMPOTENCY_TABLE = "test-idempotency"
 OUTBOX_TABLE = "test-order-outbox"
 PRODUCTS_TABLE = "test-products"
 PROMOTIONS_TABLE = "test-promotions"
+SUMMARIES_BUCKET = "test-order-summaries"
 
 
 @pytest.fixture(autouse=True)
@@ -125,6 +126,16 @@ def pricing_tables(aws):
 
 
 @pytest.fixture
+def summaries_bucket(aws):
+    s3 = boto3.client("s3", region_name="eu-west-1")
+    s3.create_bucket(
+        Bucket=SUMMARIES_BUCKET,
+        CreateBucketConfiguration={"LocationConstraint": "eu-west-1"},
+    )
+    return SUMMARIES_BUCKET
+
+
+@pytest.fixture
 def orders_queue(aws):
     sqs = boto3.client("sqs", region_name="eu-west-1")
     return sqs.create_queue(QueueName="test-orders-queue")["QueueUrl"]
@@ -138,7 +149,8 @@ def order_events_queue(aws):
 
 @pytest.fixture
 def settings(
-    orders_table, idempotency_table, outbox_table, pricing_tables, orders_queue, order_events_queue
+    orders_table, idempotency_table, outbox_table, pricing_tables,
+    orders_queue, order_events_queue, summaries_bucket,
 ) -> Settings:
     return Settings(
         env="local",
@@ -150,6 +162,7 @@ def settings(
         promotions_table_name=PROMOTIONS_TABLE,
         orders_queue_url=orders_queue,
         order_events_queue_url=order_events_queue,
+        order_summaries_bucket=SUMMARIES_BUCKET,
         _env_file=None,
     )
 

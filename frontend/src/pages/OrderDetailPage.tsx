@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { apiFetch, ApiError } from "../api/client";
-import type { Order } from "../api/types";
+import type { Order, OrderSummaryResponse } from "../api/types";
 import {
   RealtimeUpdate,
   useOrderStatusStream,
@@ -35,6 +35,7 @@ export function OrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (!token || !orderId) return;
@@ -69,6 +70,23 @@ export function OrderDetailPage() {
   );
 
   const phase = useOrderStatusStream(token, applyUpdate);
+
+  async function downloadSummary(): Promise<void> {
+    if (!token || !orderId) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const result = await apiFetch<OrderSummaryResponse>(
+        token,
+        `/v1/orders/${encodeURIComponent(orderId)}/summary`,
+      );
+      window.open(result.url, "_blank", "noopener");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   async function requestCancellation(): Promise<void> {
     if (!token || !orderId) return;
@@ -259,16 +277,24 @@ export function OrderDetailPage() {
           <span>Order total</span>
           <strong>{formatCurrency(order.totalAmount)}</strong>
         </div>
-        {canCancel && (
+        <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem", flexWrap: "wrap" }}>
           <button
-            className="btn btn-secondary"
-            style={{ marginTop: "1rem" }}
-            disabled={cancelling}
-            onClick={() => void requestCancellation()}
+            className="btn btn-primary"
+            disabled={downloading}
+            onClick={() => void downloadSummary()}
           >
-            {cancelling ? "Cancelling..." : "Cancel order"}
+            {downloading ? "Preparing..." : "Download Order Summary"}
           </button>
-        )}
+          {canCancel && (
+            <button
+              className="btn btn-secondary"
+              disabled={cancelling}
+              onClick={() => void requestCancellation()}
+            >
+              {cancelling ? "Cancelling..." : "Cancel order"}
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );

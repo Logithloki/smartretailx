@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, ApiError } from "../api/client";
-import type { FulfilmentStatus, Order, OrderListResponse } from "../api/types";
+import type { FulfilmentStatus, Order, OrderListResponse, OrderSummaryResponse } from "../api/types";
 import { useAuth } from "../context/useAuth";
 import { RealtimeUpdate, useOrderStatusStream } from "../hooks/useOrderStatusStream";
 import { formatCurrency } from "../utils/format";
@@ -93,6 +93,7 @@ export function AdminFulfilmentPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
   const [recentlyUpdated, setRecentlyUpdated] = useState<Set<string>>(new Set());
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     if (!token) return;
@@ -155,6 +156,23 @@ export function AdminFulfilmentPage() {
       }
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function downloadSummary(orderId: string): Promise<void> {
+    if (!token) return;
+    setDownloadingId(orderId);
+    setError(null);
+    try {
+      const result = await apiFetch<OrderSummaryResponse>(
+        token,
+        `/v1/orders/${encodeURIComponent(orderId)}/summary`,
+      );
+      window.open(result.url, "_blank", "noopener");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setDownloadingId(null);
     }
   }
 
@@ -468,11 +486,11 @@ export function AdminFulfilmentPage() {
                 </div>
               </div>
 
-              {selected.status === "CONFIRMED" && NEXT_STATUS[selected.fulfilmentStatus] && (
-                <div style={{ marginTop: "1.5rem" }}>
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.5rem", flexWrap: "wrap" }}>
+                {selected.status === "CONFIRMED" && NEXT_STATUS[selected.fulfilmentStatus] && (
                   <button
                     className="btn"
-                    style={{ width: "100%" }}
+                    style={{ flex: 1 }}
                     disabled={busy === selected.orderId}
                     onClick={() => void progressOrder(selected)}
                   >
@@ -480,8 +498,16 @@ export function AdminFulfilmentPage() {
                       ? "Updating..."
                       : ACTION_LABELS[NEXT_STATUS[selected.fulfilmentStatus]!]}
                   </button>
-                </div>
-              )}
+                )}
+                <button
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  disabled={downloadingId === selected.orderId}
+                  onClick={() => void downloadSummary(selected.orderId)}
+                >
+                  {downloadingId === selected.orderId ? "Preparing..." : "Download Summary"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
