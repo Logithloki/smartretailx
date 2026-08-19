@@ -98,7 +98,8 @@ jobs:
         run: |
           set -euo pipefail
           terraform plan -var=environment_name=baseline -var=project_name=smartretailx \
-            -var=live=true -var-file=release.auto.tfvars.json -out=tfplan
+            -var=live=true -var-file=release.auto.tfvars.json \
+            -var=ses_sender_email="${{ vars.SMARTRETAILX_SES_SENDER_EMAIL }}" -out=tfplan
           terraform show -json tfplan > tfplan.json
           python ../scripts/check_baseline_plan.py tfplan.json
           jq '{add:([.resource_changes[]? | select(.change.actions == ["create"])]|length),change:([.resource_changes[]? | select(.change.actions == ["update"])]|length),destroy:([.resource_changes[]? | select(.change.actions | index("delete"))]|length)}' \
