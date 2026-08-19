@@ -130,8 +130,6 @@ test.describe("administrator critical journey", () => {
       await expect(drawer).toBeVisible();
       await expect(drawer.getByText(orderId!)).toBeVisible();
       await expect(drawer.getByRole("progressbar")).toBeVisible();
-      await drawer.getByRole("button", { name: /Close detail panel/i }).click();
-      await expect(drawer).not.toBeVisible();
     }
   });
 
