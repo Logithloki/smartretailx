@@ -41,26 +41,27 @@ export function SignInPage() {
     try {
       const result = await auth.signIn(email, password);
       if (!result.isSignedIn) {
-        // The auth context has already recorded the challenge state.  PR C
-        // will add dedicated UX for each; for PR A we surface a short,
-        // implementation-detail-free message so users are not left staring
-        // at a blank screen.
+        // Route to the dedicated challenge page.  PR C ships the TOTP
+        // challenge + TOTP setup UX; SMS / email / new-password challenges
+        // are still messaged rather than implemented because they need
+        // dedicated PRs (SMS/email need pool policy changes; new-password
+        // needs its own admin-created-user story).
         switch (result.nextStep.signInStep) {
           case "CONFIRM_SIGN_IN_WITH_TOTP_CODE":
+            navigate("/auth/mfa");
+            break;
+          case "CONTINUE_SIGN_IN_WITH_TOTP_SETUP":
+            navigate("/auth/mfa/setup");
+            break;
           case "CONFIRM_SIGN_IN_WITH_SMS_CODE":
           case "CONFIRM_SIGN_IN_WITH_EMAIL_CODE":
             setChallengeMessage(
-              "Multi-factor authentication is required for this account. The verification screen will land in the next SmartRetailX release; please contact an administrator if you are locked out.",
-            );
-            break;
-          case "CONTINUE_SIGN_IN_WITH_TOTP_SETUP":
-            setChallengeMessage(
-              "Multi-factor authentication setup is required for this account. The setup screen will land in the next SmartRetailX release.",
+              "This account is enrolled in an authentication factor SmartRetailX cannot yet complete in the browser. Please contact an administrator.",
             );
             break;
           case "CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED":
             setChallengeMessage(
-              "This account must set a new password before continuing. The password-change screen will land in the next SmartRetailX release; please contact an administrator.",
+              "This account must set a new password before continuing. Please contact an administrator.",
             );
             break;
           default:
