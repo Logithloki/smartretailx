@@ -18,6 +18,7 @@ import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { MfaSetupPage } from "./pages/MfaSetupPage";
 import { MfaChallengePage } from "./pages/MfaChallengePage";
+import { OrderDetailPage } from "./pages/OrderDetailPage";
 import { useIsAdmin } from "./hooks/useIsAdmin";
 import { useCart } from "./context/CartContext";
 import { createCognitoLogoutUrl } from "./auth-config";
@@ -273,6 +274,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <PlaceOrderPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/orders/:orderId"
+            element={
+              <ProtectedRoute>
+                <OrderDetailPage />
               </ProtectedRoute>
             }
           />

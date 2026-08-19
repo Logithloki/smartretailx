@@ -279,7 +279,9 @@ export function MyOrdersPage() {
                     .join(" ")}
                 >
                   <td>
-                    <code>{o.orderId}</code>
+                    <Link to={`/orders/${encodeURIComponent(o.orderId)}`}>
+                      <code>{o.orderId}</code>
+                    </Link>
                   </td>
                   <td>{new Date(o.createdAt).toLocaleString()}</td>
                   <td>
