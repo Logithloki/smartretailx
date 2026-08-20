@@ -8,6 +8,7 @@ relational.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 from datetime import datetime
@@ -293,7 +294,7 @@ class OrderRepository:
                         "ConditionExpression": "attribute_not_exists(eventId)",
                     }},
                 ],
-                ClientRequestToken=event_id.replace("#", "-")[:36],
+                ClientRequestToken=hashlib.md5(event_id.encode(), usedforsecurity=False).hexdigest()[:36],
             )
         except self.table.meta.client.exceptions.ConditionalCheckFailedException as exc:
             raise OrderNotPending(order_id) from exc
@@ -328,7 +329,7 @@ class OrderRepository:
                          ":not_started": FulfilmentStatus.NOT_STARTED.value, ":packing": FulfilmentStatus.PACKING.value}}},
                     {"Put": {"TableName": self._settings.order_outbox_table_name, "Item": outbox,
                      "ConditionExpression": "attribute_not_exists(eventId)"}},
-                ], ClientRequestToken=event_id.replace("#", "-")[:36],
+                ], ClientRequestToken=hashlib.md5(event_id.encode(), usedforsecurity=False).hexdigest()[:36],
             )
         except self.table.meta.client.exceptions.TransactionCanceledException as exc:
             if self.get(order_id) is None:
