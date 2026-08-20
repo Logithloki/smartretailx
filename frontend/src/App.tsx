@@ -98,10 +98,8 @@ export default function App() {
   }
 
   if (!auth.isAuthenticated) {
-    // PR B: unauthenticated users need access to the whole set of public
-    // auth routes (sign in / sign up / verify email / forgot / reset), not
-    // just the sign-in page.  Route on URL rather than forcing SignInPage
-    // regardless.
+    // Public auth routes must remain reachable without a session; route by
+    // URL instead of forcing every unauthenticated visitor to sign in.
     return (
       <div className="app">
         <main className={location.pathname === "/" ? "app-main app-main-landing" : "app-main"}>

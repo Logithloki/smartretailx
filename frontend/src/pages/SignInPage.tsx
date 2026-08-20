@@ -43,11 +43,8 @@ export function SignInPage() {
       if (result.isSignedIn) {
         navigate("/products");
       } else {
-        // Route to the dedicated challenge page.  PR C ships the TOTP
-        // challenge + TOTP setup UX; SMS / email / new-password challenges
-        // are still messaged rather than implemented because they need
-        // dedicated PRs (SMS/email need pool policy changes; new-password
-        // needs its own admin-created-user story).
+        // Route supported TOTP challenges to their dedicated screens;
+        // unsupported challenge types are reported without guessing a flow.
         switch (result.nextStep.signInStep) {
           case "CONFIRM_SIGN_IN_WITH_TOTP_CODE":
             navigate("/auth/mfa");
@@ -75,8 +72,7 @@ export function SignInPage() {
     } catch (err) {
       const mapped = friendlyAuthError(err);
       setFormError(mapped.detail ?? mapped.headline);
-      // PR B: route unconfirmed accounts directly to the verify screen
-      // with the email prefilled so the user is not forced to restart.
+      // Send unconfirmed accounts to verification with the email prefilled.
       if ((err as { name?: string } | null)?.name === "UserNotConfirmedException") {
         setUnconfirmedEmail(email.trim().toLowerCase());
       } else {

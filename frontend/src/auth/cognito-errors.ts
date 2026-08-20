@@ -10,7 +10,7 @@
 // PreventUserExistenceErrors is already ENABLED on the app client, so
 // Cognito returns the generic NotAuthorizedException for both wrong password
 // and unknown email during sign-in.  This helper mirrors that stance and
-// extends it to sign-up / verification / recovery flows where PR B needs
+// extends it to sign-up, verification, and recovery flows where the same
 // friendly messages without leaking account existence.
 
 export type AuthErrorMessage = {
@@ -20,7 +20,7 @@ export type AuthErrorMessage = {
 
 // The three contexts each have slightly different account-enumeration
 // tradeoffs, so friendlyAuthError takes an optional `context` argument.
-// Defaulting to "signin" preserves PR A's behaviour.
+// Defaulting to "signin" keeps the common sign-in call site concise.
 export type AuthErrorContext = "signin" | "signup" | "verify" | "recovery";
 
 export function friendlyAuthError(

@@ -42,9 +42,8 @@ class SagaEventPublisher:
         body = {"eventType": event_type, **payload}
         attributes = {"eventType": {"DataType": "String", "StringValue": event_type}}
         if load_test:
-            # Week 7: k6 order-path runs set this so the SNS -> Lambda -> SES
-            # subscription can filter them out and not flood the inbox
-            # (amendment 21).
+            # Load tests set this so the SNS -> Lambda -> SES subscription can
+            # filter test traffic and avoid flooding the inbox.
             attributes["loadTest"] = {"DataType": "String", "StringValue": "true"}
 
         response = self.client.publish(

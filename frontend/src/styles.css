@@ -1157,7 +1157,7 @@ input:disabled, select:disabled, textarea:disabled {
   line-height: 1.4;
 }
 
-/* Password field with show/hide toggle (SignInPage — PR A). */
+/* Password field with the show/hide toggle used on sign-in forms. */
 .password-input-wrap {
   position: relative;
   display: flex;
@@ -1238,7 +1238,7 @@ input:disabled, select:disabled, textarea:disabled {
   margin: 0 0 0.5rem 0;
 }
 
-/* Inline hint text under a form field (PR B — SignUp / Reset password). */
+/* Inline hint text under sign-up and password-recovery fields. */
 .auth-hint {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -1300,7 +1300,7 @@ input:disabled, select:disabled, textarea:disabled {
   margin-bottom: 1rem;
 }
 
-/* ── Security / MFA (PR C) ─────────────────────────────────── */
+/* ── Security / MFA ────────────────────────────────────────── */
 .security-page {
   max-width: 720px;
   margin: 0 auto;

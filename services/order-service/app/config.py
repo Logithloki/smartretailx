@@ -13,7 +13,7 @@ class Settings(BaseServiceSettings):
     promotions_table_name: str = "smartretailx-promotions"
     orders_queue_url: str = ""
     local_inline_outbox_enabled: bool = False
-    # Saga compensation receiver (Week 2 Day 5).
+    # Queue used by the saga compensation receiver.
     order_events_queue_url: str = ""
     # Off by default so tests and one-shot CLI use never spawn a poller.
     compensation_consumer_enabled: bool = False

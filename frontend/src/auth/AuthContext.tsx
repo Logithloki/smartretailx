@@ -14,16 +14,13 @@ import type { IdentityProfile } from "./roles";
 // -----------------------------------------------------------------------------
 // Auth state machine
 // -----------------------------------------------------------------------------
-// The SmartRetailX SPA needs to represent every step Cognito can surface
-// during sign-in.  PR A implements the state-machine plumbing for all of
-// them but only ships finished UX for the "authenticated" and
-// "unauthenticated" branches; the intermediate challenge states are
-// tolerated so PR C can add MFA/challenge screens without another rewrite.
+// The SPA represents every sign-in state Cognito can return, including
+// challenge states that have dedicated screens or recovery messaging.
 //
 //  loading                 - initial hydration on page load / after refresh
 //  unauthenticated         - no valid session
-//  challenge:*             - Cognito returned a challenge that requires UX
-//                            not yet implemented in PR A (MFA/reset/etc.)
+//  challenge:*             - Cognito returned a challenge that needs UX
+//                            before the user can become authenticated
 //  authenticated           - valid Cognito session, tokens available
 export type AuthStatus =
   | "loading"
@@ -35,9 +32,7 @@ export type AuthStatus =
   | "challenge_email"
   | "authenticated";
 
-// User shape kept intentionally compatible with the previous
-// react-oidc-context contract (`user.access_token`, `user.profile.email`,
-// `user.profile['cognito:groups']`) so no consumer page needs to change.
+// Keep the token and profile shape stable for pages that consume auth state.
 export interface AuthUser {
   access_token: string;
   id_token: string;
