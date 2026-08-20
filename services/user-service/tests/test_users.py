@@ -8,6 +8,7 @@ from moto import mock_aws
 
 from app.config import Settings
 from app.main import create_app
+from app.models import UserProfile
 from app.services import CognitoUserRepository, InMemoryUserRepository, UserNotFound
 
 
@@ -94,6 +95,44 @@ def test_admin_can_list_users():
     response = client().get("/v1/users", headers=token_for("admin"))
     assert response.status_code == 200
     assert len(response.json()["users"]) == 2
+
+
+def test_admin_directory_returns_legacy_test_domain_email():
+    repository = InMemoryUserRepository(
+        seed=[
+            UserProfile(
+                userId="legacy-user",
+                username="legacy-user",
+                email="legacy@smartretailx.test",
+                groups=["customer"],
+            )
+        ]
+    )
+    response = TestClient(create_app(settings=local_settings(), repository=repository)).get(
+        "/v1/users", headers=token_for("admin")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["users"][0]["email"] == "legacy@smartretailx.test"
+
+
+def test_admin_directory_handles_missing_email():
+    repository = InMemoryUserRepository(
+        seed=[
+            UserProfile(
+                userId="no-email-user",
+                username="no-email-user",
+                email=None,
+                groups=["customer"],
+            )
+        ]
+    )
+    response = TestClient(create_app(settings=local_settings(), repository=repository)).get(
+        "/v1/users", headers=token_for("admin")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["users"][0]["email"] is None
 
 
 def test_list_users_rejects_out_of_range_limit():
