@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "environment": "test",
+  "cluster": "smartretailx-test-cluster",
+  "service": "smartretailx-test-product-service",
+  "stoppedTask": "1da417e3865c492eaaa796a3326eff1e",
+  "replacementTask": "2a2de11da85646348c270689486c4ad4",
+  "startedUtc": "2026-08-20T10:24:55.6013803Z",
+  "recoveredUtc": "2026-08-20T10:26:17.4661407Z",
+  "recoverySeconds": 81.9
+}

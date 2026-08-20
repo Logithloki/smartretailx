@@ -1,0 +1,36 @@
+{
+  "date": "2026-08-20",
+  "environment": "test",
+  "run": 32360229422,
+  "profile": "concurrent",
+  "durationSeconds": 480,
+  "maxVus": 3,
+  "iterations": 947,
+  "httpRequests": 1894,
+  "requestsPerSecond": 3.9363158122790023,
+  "failedRate": 0,
+  "checksPassed": 1894,
+  "checksFailed": 0,
+  "httpDurationMs": {
+    "average": 261.1841204630414,
+    "p90": 425.8735401,
+    "p95": 430.9946468,
+    "p99": 451.39004306000004,
+    "max": 685.354985
+  },
+  "apiGateway": {
+    "requests": 1894,
+    "responses4xx": 0,
+    "responses5xx": 0,
+    "averageLatencyMs": 27.824006679045887
+  },
+  "wafBlockedRequests": 0,
+  "ecsMaximumPercent": {
+    "product": {"cpu": 11.252725407481194, "memory": 11.9140625},
+    "order": {"cpu": 1.0532793998718262, "memory": 12.5},
+    "inventory": {"cpu": 1.1454228758811951, "memory": 11.62109375},
+    "user": {"cpu": 0.6869856119155884, "memory": 9.5703125}
+  },
+  "autoscalingObserved": false,
+  "status": "PASS"
+}
