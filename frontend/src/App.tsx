@@ -104,7 +104,7 @@ export default function App() {
     // regardless.
     return (
       <div className="app">
-        <main className="app-main">
+        <main className={location.pathname === "/" ? "app-main app-main-landing" : "app-main"}>
           <Routes>
             {/* Public marketing landing page — the front door of the site. */}
             <Route path="/" element={<LandingPage />} />

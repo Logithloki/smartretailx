@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { SmartRetailAuthProvider } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import { loadRuntimeConfig } from "./config/runtime-config";
+import { configureAmplify } from "./auth/amplify-setup";
 
 import App from "./App";
 import "./styles.css";
@@ -23,6 +24,10 @@ function renderConfigurationError(error: unknown): void {
 
 async function bootstrap(): Promise<void> {
   const config = await loadRuntimeConfig();
+  // Validate the Cognito portion before React renders. Configuration mistakes
+  // are then handled by bootstrap's visible error state instead of surfacing
+  // as an uncaught provider-render error and leaving a blank page.
+  configureAmplify(config);
   root.render(
     <React.StrictMode>
       <SmartRetailAuthProvider config={config}>
