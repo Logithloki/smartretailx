@@ -53,9 +53,8 @@ export function SignUpPage() {
       });
       // Amplify returns nextStep.signUpStep = "CONFIRM_SIGN_UP" for the
       // normal case where Cognito emailed a 6-digit code.  If the pool
-      // auto-confirmed the user (never happens for real users after PR B's
-      // Test Lambda narrowing) the step is "DONE" and we send them to Sign
-      // In directly.
+      // Synthetic CI identities may be auto-confirmed; those users can
+      // proceed directly to sign-in instead of entering a code.
       if (result.nextStep.signUpStep === "DONE") {
         navigate("/login", { replace: true });
       } else {
