@@ -17,11 +17,16 @@ async function hostedUiLogin(page: Page, account: typeof customer): Promise<void
   // PR A migrated the sign-in flow off Cognito Hosted UI onto a
   // first-party SmartRetailX React form.  Credentials go straight to
   // Amplify Auth (SRP); no more redirect through the Cognito domain.
-  await page.goto(baseURL);
-  // Wait for the React SPA to hydrate + Amplify to configure before any
-  // interaction; without this, locator.fill can race the initial render on
-  // slow CI runners.
-  await expect(page.getByRole("heading", { name: /^SmartRetailX$/ })).toBeVisible();
+  //
+  // Since the storefront-landing PR, "/" renders the public marketing
+  // landing (which also contains an <h1>SmartRetailX</h1>) rather than
+  // the sign-in form. Navigate straight to the sign-in route.
+  await page.goto(`${baseURL.replace(/\/$/, "")}/login`);
+  // Wait for the sign-in form's email input to be attached + hydrated
+  // before typing into it (Amplify configuration is async).
+  await expect(page.getByRole("textbox", { name: /email/i })).toBeVisible({
+    timeout: 30_000,
+  });
   // Target the input controls by role rather than by label — the
   // <label>Email <input/></label> pattern makes getByLabel ambiguous
   // between the label element and the textbox, causing intermittent
