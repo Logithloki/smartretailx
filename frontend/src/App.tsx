@@ -1,5 +1,6 @@
-import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./context/useAuth";
+import { LandingPage } from "./pages/LandingPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { CallbackPage } from "./pages/CallbackPage";
 import { PlaceOrderPage } from "./pages/PlaceOrderPage";
@@ -105,6 +106,8 @@ export default function App() {
       <div className="app">
         <main className="app-main">
           <Routes>
+            {/* Public marketing landing page — the front door of the site. */}
+            <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<SignInPage />} />
             <Route path="/signup" element={<SignUpPage />} />
             <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -116,6 +119,8 @@ export default function App() {
             <Route path="/auth/mfa" element={<MfaChallengePage />} />
             <Route path="/auth/mfa/setup" element={<MfaSetupPage />} />
             <Route path="/callback" element={<CallbackPage />} />
+            {/* Everything else (deep links into the authenticated app) sends
+                the visitor through the sign-in flow first. */}
             <Route path="*" element={<SignInPage />} />
           </Routes>
         </main>
@@ -123,8 +128,13 @@ export default function App() {
     );
   }
 
+  // The landing page brings its own public header + footer; the internal
+  // app chrome would double up on "/" and clash with the marketing layout.
+  const isLandingRoute = location.pathname === "/";
+
   return (
     <div className="app">
+      {!isLandingRoute && (
       <header className="app-header">
         <div className="header-left">
           <Link to="/" className="brand">
@@ -248,10 +258,11 @@ export default function App() {
           )}
         </div>
       </header>
+      )}
 
-      <main className="app-main">
+      <main className={isLandingRoute ? "app-main app-main-landing" : "app-main"}>
         <Routes>
-          <Route path="/" element={<Navigate to="/products" replace />} />
+          <Route path="/" element={<LandingPage />} />
           <Route path="/callback" element={<CallbackPage />} />
           <Route
             path="/products"
