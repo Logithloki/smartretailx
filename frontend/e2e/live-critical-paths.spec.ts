@@ -138,8 +138,12 @@ test.describe("customer critical journey", () => {
     ]);
 
     if (popup) {
-      const url = popup.url();
-      expect(url).toContain("X-Amz-Signature");
+      await expect
+        .poll(() => popup.url(), {
+          message: "order summary popup should navigate to a signed download URL",
+          timeout: 15_000,
+        })
+        .toContain("X-Amz-Signature");
       await popup.close();
     }
   });
