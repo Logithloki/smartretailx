@@ -10,6 +10,41 @@ const admin = {
   password: process.env.E2E_ADMIN_PASSWORD,
 };
 
+test.describe("public storefront", () => {
+  test.skip(!baseURL, "E2E_BASE_URL is required");
+
+  test("guest storefront renders with working navigation and no horizontal overflow", async ({ page }) => {
+    await page.goto(`${baseURL!.replace(/\/$/, "")}/`);
+
+    await expect(page.getByRole("heading", { name: /shop smarter/i, level: 1 })).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: /shopping cart with everyday groceries/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: /^sign in$/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /create account/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /a thoughtful place to start/i })).toBeVisible();
+
+    const desktopOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(desktopOverflow).toBe(false);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole("button", { name: /open navigation/i })).toBeVisible();
+    await page.getByRole("button", { name: /open navigation/i }).click();
+    await expect(page.getByRole("button", { name: /close navigation/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(page.getByRole("link", { name: /^cart \(empty\)$/i })).toBeVisible();
+
+    const mobileOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(mobileOverflow).toBe(false);
+  });
+});
+
 async function hostedUiLogin(page: Page, account: typeof customer): Promise<void> {
   if (!baseURL || !account.username || !account.password) {
     throw new Error("E2E_BASE_URL and the selected E2E account credentials are required");

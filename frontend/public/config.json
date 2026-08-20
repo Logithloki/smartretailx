@@ -1,9 +1,9 @@
 {
   "apiBaseUrl": "",
   "websocketUrl": "ws://localhost:9001",
-  "cognitoAuthority": "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_REPLACE_ME",
+  "cognitoAuthority": "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_localdev",
   "cognitoDomain": "https://smartretailx-dev.auth.eu-west-1.amazoncognito.com",
-  "cognitoClientId": "REPLACE_ME",
+  "cognitoClientId": "local-development-client",
   "redirectUri": "http://localhost:5173/callback",
   "logoutUri": "http://localhost:5173/",
   "environment": "local",
