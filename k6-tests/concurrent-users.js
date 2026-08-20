@@ -6,8 +6,13 @@ export const options = {
   scenarios: {
     concurrent_catalogue_users: {
       executor: 'constant-vus',
-      vus: Number(__ENV.CONCURRENT_USERS || 25),
-      duration: __ENV.DURATION || '5m',
+      // One hosted runner has one source IP. Keep the default below the
+      // CloudFront WAF limit of 2,000 requests per five minutes so this
+      // profile measures the application rather than intentionally testing
+      // the edge rate-control rule. Higher values remain available through
+      // CONCURRENT_USERS for distributed or explicitly exempted test sources.
+      vus: Number(__ENV.CONCURRENT_USERS || 3),
+      duration: __ENV.DURATION || '8m',
     },
   },
   summaryTrendStats: ['min', 'med', 'avg', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],

@@ -14,6 +14,7 @@ This directory contains comprehensive k6 test scripts for the SmartRetailX platf
 2. **Stress Test (`stress-test.js`)**: Pushes system to breaking point (200 VUs) to test ECS autoscaling and API Gateway throttling (rate: 50, burst: 100).
 3. **Spike Test (`spike-test.js`)**: Simulates sudden traffic bursts (150 VUs) to verify system stability and recovery.
 4. **Order Smoke Test (`order-smoke.js`)**: Verifies the order saga flow (1-2 VUs) with a `loadTest` flag to prevent SES spam.
+5. **Concurrent Users (`concurrent-users.js`)**: Runs an eight-minute, three-VU catalogue profile below the single-runner WAF rate limit. Override `CONCURRENT_USERS` only when traffic is distributed across approved test sources.
 
 ## Running Tests
 

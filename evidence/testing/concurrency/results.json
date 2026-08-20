@@ -1,0 +1,13 @@
+{
+  "date": "2026-08-20",
+  "ciRun": 32358575679,
+  "status": "PASS",
+  "scenarios": [
+    {"id": "last-item", "attempts": 2, "initialStock": 1, "successful": 1, "failed": 1, "finalStock": 0, "status": "PASS"},
+    {"id": "five-units", "attempts": 20, "initialStock": 5, "successful": 5, "failed": 15, "finalStock": 0, "status": "PASS"},
+    {"id": "checkout-idempotency", "orders": 1, "outboxCommands": 1, "status": "PASS"},
+    {"id": "cancel-dispatch-race", "validTransitions": 1, "impossibleState": false, "status": "PASS"},
+    {"id": "duplicate-admin-dispatch", "successful": 1, "conflicts": 1, "outboxEvents": 1, "status": "PASS"},
+    {"id": "duplicate-event-delivery", "duplicateBusinessEffects": 0, "status": "PASS"}
+  ]
+}

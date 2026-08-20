@@ -448,6 +448,43 @@ def test_cancellation_and_dispatch_race_allows_exactly_one_transition(client, re
     assert not (final.status is OrderStatus.CANCEL_PENDING and final.fulfilmentStatus is FulfilmentStatus.DISPATCHED)
 
 
+def test_two_admins_cannot_emit_duplicate_dispatch_transitions(client, repository):
+    """A conditional transition admits one writer and one authoritative event."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    order_id = client.post("/v1/orders", json=_payload(), headers=auth_header()).json()["orderId"]
+    repository.set_status(order_id, OrderStatus.CONFIRMED, only_if_pending=True)
+    repository.set_fulfilment(order_id, FulfilmentStatus.NOT_STARTED, FulfilmentStatus.PACKING)
+    ready = Barrier(2)
+
+    def dispatch() -> str:
+        ready.wait()
+        try:
+            repository.set_fulfilment(
+                order_id, FulfilmentStatus.PACKING, FulfilmentStatus.DISPATCHED
+            )
+            return "updated"
+        except Exception:
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _attempt: dispatch(), range(2)))
+
+    assert outcomes.count("updated") == 1
+    assert outcomes.count("conflict") == 1
+    assert repository.get(order_id).fulfilmentStatus is FulfilmentStatus.DISPATCHED
+
+    outbox = boto3.resource("dynamodb", region_name="eu-west-1").Table(OUTBOX_TABLE)
+    records = outbox.scan(
+        FilterExpression="eventId = :event_id",
+        ExpressionAttributeValues={
+            ":event_id": f"fulfilment-status-changed#{order_id}#DISPATCHED"
+        },
+    )["Items"]
+    assert len(records) == 1
+
+
 def test_user_email_stored_on_order_item_and_threaded_through_fulfilment(client, repository):
     """userEmail is event-carried state for fulfilment notifications."""
     token = jwt.encode(
