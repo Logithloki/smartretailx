@@ -20,8 +20,8 @@ test.describe("public storefront", () => {
     await expect(
       page.getByRole("img", { name: /shopping cart with everyday groceries/i }),
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: /^sign in$/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /create account/i })).toBeVisible();
+    await expect(page.getByLabel("Primary navigation").getByRole("link", { name: /^sign in$/i })).toBeVisible();
+    await expect(page.getByLabel("Primary navigation").getByRole("link", { name: /create account/i })).toBeVisible();
     await expect(page.getByRole("heading", { name: /a thoughtful place to start/i })).toBeVisible();
 
     const desktopOverflow = await page.evaluate(
