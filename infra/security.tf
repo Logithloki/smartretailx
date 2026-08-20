@@ -198,8 +198,19 @@ resource "aws_iam_role_policy" "order_task" {
       {
         Sid      = "OrderSummariesBucket"
         Effect   = "Allow"
-        Action   = ["s3:PutObject", "s3:GetObject", "s3:HeadObject"]
+        Action   = ["s3:PutObject", "s3:GetObject"]
         Resource = ["${aws_s3_bucket.order_summaries.arn}/orders/*"]
+      },
+      {
+        Sid      = "OrderSummariesList"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [aws_s3_bucket.order_summaries.arn]
+        Condition = {
+          StringLike = {
+            "s3:prefix" = ["orders/*"]
+          }
+        }
       }
     ]
   })

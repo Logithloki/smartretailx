@@ -46,7 +46,7 @@ class DocumentStore:
             self.client.head_object(Bucket=self.bucket, Key=key)
             return True
         except ClientError as exc:
-            if exc.response["Error"]["Code"] in ("404", "NoSuchKey"):
+            if exc.response["Error"]["Code"] in ("403", "404", "NoSuchKey"):
                 return False
             raise
 
