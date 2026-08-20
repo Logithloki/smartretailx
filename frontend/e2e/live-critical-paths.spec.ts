@@ -10,26 +10,43 @@ const admin = {
   password: process.env.E2E_ADMIN_PASSWORD,
 };
 
+const responsiveViewports = [
+  { width: 1440, height: 900 },
+  { width: 1366, height: 768 },
+  { width: 768, height: 1024 },
+  { width: 390, height: 844 },
+] as const;
+
+async function expectNoHorizontalPageOverflow(page: Page): Promise<void> {
+  const hasOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(hasOverflow).toBe(false);
+}
+
 test.describe("public storefront", () => {
   test.skip(!baseURL, "E2E_BASE_URL is required");
 
   test("guest storefront renders with working navigation and no horizontal overflow", async ({ page }) => {
-    await page.goto(`${baseURL!.replace(/\/$/, "")}/`);
+    for (const viewport of responsiveViewports) {
+      await page.setViewportSize(viewport);
+      await page.goto(`${baseURL!.replace(/\/$/, "")}/`);
+      await expect(
+        page.getByRole("heading", { name: /everything you need/i, level: 1 }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("img", { name: /shopping cart with everyday groceries/i }),
+      ).toBeVisible();
+      await expectNoHorizontalPageOverflow(page);
+    }
 
-    await expect(page.getByRole("heading", { name: /everything you need/i, level: 1 })).toBeVisible();
     await expect(
-      page.getByRole("img", { name: /shopping cart with everyday groceries/i }),
+      page.getByLabel("Primary navigation").getByRole("link", { name: /^sign in$/i }),
     ).toBeVisible();
-    await expect(page.getByLabel("Primary navigation").getByRole("link", { name: /^sign in$/i })).toBeVisible();
-    await expect(page.getByLabel("Primary navigation").getByRole("link", { name: /create account/i })).toBeVisible();
+    await expect(
+      page.getByLabel("Primary navigation").getByRole("link", { name: /create account/i }),
+    ).toBeVisible();
     await expect(page.getByRole("heading", { name: /a thoughtful place to start/i })).toBeVisible();
-
-    const desktopOverflow = await page.evaluate(
-      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-    );
-    expect(desktopOverflow).toBe(false);
-
-    await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole("button", { name: /open navigation/i })).toBeVisible();
     await page.getByRole("button", { name: /open navigation/i }).click();
     await expect(page.getByRole("button", { name: /close navigation/i })).toHaveAttribute(
@@ -38,10 +55,7 @@ test.describe("public storefront", () => {
     );
     await expect(page.getByRole("link", { name: /^cart \(empty\)$/i })).toBeVisible();
 
-    const mobileOverflow = await page.evaluate(
-      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-    );
-    expect(mobileOverflow).toBe(false);
+    await expectNoHorizontalPageOverflow(page);
   });
 });
 
@@ -174,6 +188,24 @@ test.describe("customer critical journey", () => {
     // which would incorrectly pass this assertion for the wrong reason.
     expect(status).toBe(403);
   });
+
+  test("customer commerce pages remain responsive without whole-page overflow", async ({ page }) => {
+    await hostedUiLogin(page, customer);
+    const routes = [
+      { path: "/products", heading: /Product Catalogue/i },
+      { path: "/cart", heading: /Cart & checkout/i },
+      { path: "/orders", heading: /My Orders/i },
+    ];
+
+    for (const viewport of responsiveViewports) {
+      await page.setViewportSize(viewport);
+      for (const route of routes) {
+        await page.goto(`${baseURL}${route.path}`);
+        await expect(page.getByRole("heading", { name: route.heading })).toBeVisible();
+        await expectNoHorizontalPageOverflow(page);
+      }
+    }
+  });
 });
 
 test.describe("administrator critical journey", () => {
@@ -235,5 +267,15 @@ test.describe("administrator critical journey", () => {
     page.once("dialog", (dialog) => dialog.accept());
     await productRow.getByRole("button", { name: /Delete/i }).click();
     await expect(page.getByText(productId, { exact: true })).toHaveCount(0);
+  });
+
+  test("fulfilment dashboard remains responsive without whole-page overflow", async ({ page }) => {
+    await hostedUiLogin(page, admin);
+    for (const viewport of responsiveViewports) {
+      await page.setViewportSize(viewport);
+      await page.goto(`${baseURL}/admin/fulfilment`);
+      await expect(page.getByRole("heading", { name: /Admin: Fulfilment/i })).toBeVisible();
+      await expectNoHorizontalPageOverflow(page);
+    }
   });
 });
