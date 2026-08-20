@@ -226,3 +226,51 @@ def test_cognito_repository_requires_pool_id():
     settings = Settings(env="production", cognito_user_pool_id=None, _env_file=None)
     with pytest.raises(RuntimeError):
         CognitoUserRepository(settings).list_users()
+
+
+def test_cognito_directory_lists_group_memberships_in_bulk():
+    """The directory must not issue one Cognito group call per listed user.
+
+    The old N+1 implementation made a directory page fragile under Cognito's
+    request quotas and converted one group lookup failure into an HTTP 500.
+    """
+
+    class FakeCognito:
+        def list_users(self, **kwargs):
+            return {
+                "Users": [
+                    {
+                        "Username": "admin@example.com",
+                        "Attributes": [{"Name": "email", "Value": "admin@example.com"}],
+                    },
+                    {
+                        "Username": "customer@example.com",
+                        "Attributes": [{"Name": "email", "Value": "customer@example.com"}],
+                    },
+                ]
+            }
+
+        def list_groups(self, **kwargs):
+            return {"Groups": [{"GroupName": "admin"}, {"GroupName": "customer"}]}
+
+        def list_users_in_group(self, **kwargs):
+            if kwargs["GroupName"] == "admin":
+                return {"Users": [{"Username": "admin@example.com"}]}
+            return {"Users": [{"Username": "customer@example.com"}]}
+
+        def admin_list_groups_for_user(self, **kwargs):
+            raise AssertionError("per-user group lookup must not be used for directory listings")
+
+    settings = Settings(
+        env="production", cognito_user_pool_id="eu-west-1_example", _env_file=None
+    )
+    repo = CognitoUserRepository(settings)
+    repo._client = FakeCognito()
+
+    users, token = repo.list_users()
+
+    assert token is None
+    assert {user.username: user.groups for user in users} == {
+        "admin@example.com": ["admin"],
+        "customer@example.com": ["customer"],
+    }
