@@ -261,6 +261,12 @@ resource "aws_iam_role_policy" "gha_terraform_plan_state_lock" {
           "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate.tflock",
         ]
       },
+      {
+        Sid      = "SecretsManagerRefresh"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/*"
+      },
     ]
   })
 }
