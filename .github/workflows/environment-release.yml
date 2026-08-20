@@ -125,6 +125,8 @@ jobs:
             infra/tfplan.sha256
             infra/tfplan.json
             infra/plan-summary.json
+            infra/build/*.zip
+            infra/cognito_auto_confirm.zip
           retention-days: 2
 
   apply_reviewed_plan:
