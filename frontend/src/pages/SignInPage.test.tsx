@@ -82,6 +82,20 @@ describe("SignInPage", () => {
     expect(signIn).toHaveBeenCalledWith("CUSTOMER@example.com", "hunter2!ABCdef");
   });
 
+  it("navigates to products after Cognito completes sign-in", async () => {
+    const signIn = vi.fn().mockResolvedValue(successResult);
+    renderPage(makeAuth({ signIn }));
+    fireEvent.change(screen.getByLabelText(/^email$/i), {
+      target: { value: "customer@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password$/i), {
+      target: { value: "Correct-Horse-1!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/products"));
+  });
+
   it("maps NotAuthorizedException to a friendly generic message", async () => {
     const signIn = vi.fn().mockRejectedValue(
       Object.assign(new Error("cognito internal"), { name: "NotAuthorizedException" }),
