@@ -16,14 +16,12 @@ jobs:
     # preinstalled, removing the 4-6 min `install-deps` apt-get step.
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble
-      options: --user 1001
     env:
       E2E_BASE_URL: ${{ vars.SMARTRETAILX_PUBLIC_URL }}
       E2E_CUSTOMER_USERNAME: ${{ secrets.CUSTOMER_USERNAME }}
       E2E_CUSTOMER_PASSWORD: ${{ secrets.CUSTOMER_PASSWORD }}
       E2E_ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       E2E_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-      HOME: /root
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
