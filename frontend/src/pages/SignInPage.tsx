@@ -40,7 +40,9 @@ export function SignInPage() {
     setSubmitting(true);
     try {
       const result = await auth.signIn(email, password);
-      if (!result.isSignedIn) {
+      if (result.isSignedIn) {
+        navigate("/products");
+      } else {
         // Route to the dedicated challenge page.  PR C ships the TOTP
         // challenge + TOTP setup UX; SMS / email / new-password challenges
         // are still messaged rather than implemented because they need
