@@ -7,6 +7,7 @@ import { loadRuntimeConfig } from "./config/runtime-config";
 
 import App from "./App";
 import "./styles.css";
+import "./styles/landing.css";
 
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 
