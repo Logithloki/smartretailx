@@ -105,6 +105,48 @@ def test_repeated_reservations_drain_to_zero_and_then_refuse(repository):
     assert repository.reserve([line("prod-mouse-002", 1)]).ok is False
 
 
+def test_two_concurrent_buyers_cannot_oversell_last_item(repository):
+    """The conditional stock decrement permits exactly one final-unit winner."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    repository.upsert("prod-last-item", 1)
+    ready = Barrier(2)
+
+    def reserve_last_item() -> bool:
+        ready.wait()
+        return repository.reserve([line("prod-last-item", 1)]).ok
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _attempt: reserve_last_item(), range(2)))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == 1
+    assert repository.get("prod-last-item").quantity == 0
+
+
+def test_twenty_concurrent_attempts_never_consume_more_than_five(repository):
+    """Contention must not make stock negative or create more winners than units."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    repository.upsert("prod-five-left", 5)
+    ready = Barrier(20)
+
+    def reserve_one() -> bool:
+        ready.wait()
+        return repository.reserve([line("prod-five-left", 1)]).ok
+
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        outcomes = list(pool.map(lambda _attempt: reserve_one(), range(20)))
+
+    final_quantity = repository.get("prod-five-left").quantity
+    assert outcomes.count(True) == 5
+    assert outcomes.count(False) == 15
+    assert final_quantity == 0
+    assert final_quantity >= 0
+
+
 # --------------------------------------------------------------------------
 # compensation helper
 # --------------------------------------------------------------------------

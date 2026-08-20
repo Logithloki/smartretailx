@@ -97,6 +97,28 @@ def test_in_flight_duplicate_gets_409(client, settings, repository):
     assert _count_orders(settings) == 0
 
 
+def test_concurrent_same_key_creates_one_order_and_one_command(client, settings):
+    """Two simultaneous retries may race, but only one may commit business state."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    ready = Barrier(2)
+    headers = {**auth_header(), **_key("concurrent-same-key")}
+
+    def submit_once():
+        ready.wait()
+        return client.post("/v1/orders", json=_payload(), headers=headers)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _attempt: submit_once(), range(2)))
+
+    assert sorted(response.status_code for response in responses) in ([200, 201], [201, 409])
+    successful = [response for response in responses if response.status_code in (200, 201)]
+    assert len({response.json()["orderId"] for response in successful}) == 1
+    assert _count_orders(settings) == 1
+    assert _count_outbox_records(settings) == 1
+
+
 # --------------------------------------------------------------------------
 # per-user scoping (a security property, not just correctness)
 # --------------------------------------------------------------------------
