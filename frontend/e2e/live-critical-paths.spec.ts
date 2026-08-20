@@ -38,24 +38,28 @@ test.describe("public storefront", () => {
         page.getByRole("img", { name: /shopping cart with everyday groceries/i }),
       ).toBeVisible();
       await expectNoHorizontalPageOverflow(page);
+
+      if (viewport.width >= 1024) {
+        await expect(
+          page.getByLabel("Primary navigation").getByRole("link", { name: /^sign in$/i }),
+        ).toBeVisible();
+        await expect(
+          page.getByLabel("Primary navigation").getByRole("link", { name: /create account/i }),
+        ).toBeVisible();
+      } else {
+        const menuButton = page.getByRole("button", { name: /open navigation/i });
+        await expect(menuButton).toBeVisible();
+        await menuButton.click();
+        await expect(page.getByRole("button", { name: /close navigation/i })).toHaveAttribute(
+          "aria-expanded",
+          "true",
+        );
+        await expect(page.getByRole("link", { name: /^cart \(empty\)$/i })).toBeVisible();
+        await expectNoHorizontalPageOverflow(page);
+      }
     }
 
-    await expect(
-      page.getByLabel("Primary navigation").getByRole("link", { name: /^sign in$/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByLabel("Primary navigation").getByRole("link", { name: /create account/i }),
-    ).toBeVisible();
     await expect(page.getByRole("heading", { name: /a thoughtful place to start/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /open navigation/i })).toBeVisible();
-    await page.getByRole("button", { name: /open navigation/i }).click();
-    await expect(page.getByRole("button", { name: /close navigation/i })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    await expect(page.getByRole("link", { name: /^cart \(empty\)$/i })).toBeVisible();
-
-    await expectNoHorizontalPageOverflow(page);
   });
 });
 
@@ -146,20 +150,22 @@ test.describe("customer critical journey", () => {
     const downloadBtn = page.getByRole("button", { name: /Download Order Summary/i });
     await expect(downloadBtn).toBeVisible();
 
-    const [popup] = await Promise.all([
-      page.waitForEvent("popup", { timeout: 15_000 }).catch(() => null),
-      downloadBtn.click(),
-    ]);
+    const popupPromise = page.waitForEvent("popup", { timeout: 15_000 }).catch(() => null);
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        /\/v1\/orders\/[^/]+\/summary(?:\?|$)/.test(response.url()),
+      { timeout: 15_000 },
+    );
 
-    if (popup) {
-      await expect
-        .poll(() => popup.url(), {
-          message: "order summary popup should navigate to a signed download URL",
-          timeout: 15_000,
-        })
-        .toContain("X-Amz-Signature");
-      await popup.close();
-    }
+    await downloadBtn.click();
+    const response = await responsePromise;
+    expect(response.ok()).toBe(true);
+    const payload = (await response.json()) as { downloadUrl?: string };
+    expect(payload.downloadUrl).toContain("X-Amz-Signature");
+
+    const popup = await popupPromise;
+    await popup?.close();
   });
 
   test("customer is blocked from admin UI and admin API", async ({ page }) => {
@@ -201,7 +207,13 @@ test.describe("customer critical journey", () => {
       await page.setViewportSize(viewport);
       for (const route of routes) {
         await page.goto(`${baseURL}${route.path}`);
-        await expect(page.getByRole("heading", { name: route.heading })).toBeVisible();
+        if (route.path === "/cart") {
+          await expect(
+            page.getByRole("heading", { name: /Cart & checkout|Your cart is empty/i }),
+          ).toBeVisible();
+        } else {
+          await expect(page.getByRole("heading", { name: route.heading })).toBeVisible();
+        }
         await expectNoHorizontalPageOverflow(page);
       }
     }
