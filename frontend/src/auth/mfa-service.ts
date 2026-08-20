@@ -27,7 +27,7 @@ import {
 import type { FetchMFAPreferenceOutput } from "aws-amplify/auth";
 type TOTPSetupDetails = Awaited<ReturnType<typeof setUpTOTP>>;
 
-// Exact CI/E2E identity pattern from the Cognito pre-signup Lambda (PR B).
+// Keep this pattern in sync with the Cognito pre-signup Lambda.
 // Keep the two in sync if either changes.
 export const CI_IDENTITY_PATTERN =
   /^ci-(smoke|customer|admin)-(development|test|staging)@example\.com$/;

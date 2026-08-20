@@ -23,7 +23,8 @@ class Settings(BaseServiceSettings):
     sns_topic_arn: str = ""
     consumer_enabled: bool = False
 
-    # Resilience knobs (Week 3 Day 2).
+    # Circuit-breaker and retry settings are configurable for local tests and
+    # can be tuned independently of the service code.
     breaker_fail_max: int = 3
     breaker_reset_timeout: int = 30
     retry_attempts: int = 3

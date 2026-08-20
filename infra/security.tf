@@ -629,8 +629,8 @@ resource "aws_cognito_user_pool" "main" {
     email_sending_account = "COGNITO_DEFAULT"
   }
 
-  # PR A: switch MFA from OFF to OPTIONAL so individual users can enrol a
-  # TOTP authenticator via Profile > Security in a later PR.  OPTIONAL
+  # OPTIONAL lets individual users enrol a TOTP authenticator from Profile >
+  # Security while keeping MFA unenrolled for users who have not opted in.
   # means:
   #   - a user who has NOT called SetUserMFAPreference remains
   #     non-MFA-enrolled and continues to authenticate exactly as before,
@@ -677,17 +677,8 @@ resource "aws_cognito_user_pool" "main" {
 
 # ─── Cognito Pre-SignUp Auto-Confirm & SES Registration Lambda ───
 #
-# PR B narrows the auto-confirm rule.
-#
-# Before PR B: the Lambda auto-confirmed EVERY signup on the Test pool, so
-# ordinary Sign Up would land as CONFIRMED without an email verification
-# code and Test could not exercise the real production-like verification
-# flow.
-#
-# After PR B: only synthetic CI/E2E identities that match the explicit
-# pattern below are auto-confirmed.  Ordinary human signups on Test now
-# behave exactly like Staging (UNCONFIRMED, real Cognito email, /verify-email
-# UX exercised).
+# Only synthetic CI/E2E identities matching the explicit pattern below are
+# auto-confirmed. Human signups still use Cognito email verification.
 #
 # Deliberately narrow: the pattern is limited to the exact
 # `ci-{role}-{env}@example.com` shape used by the runtime-mint scripts, so
@@ -831,10 +822,8 @@ resource "aws_cognito_user_pool_client" "spa" {
     # obtain-cognito-token.sh) call AdminInitiateAuth with a dedicated
     # deploy role.  This flow is not available to the SPA.
     "ALLOW_ADMIN_USER_PASSWORD_AUTH",
-    # PR A: SRP authentication for the custom React sign-in page.  The
-    # password never leaves the browser in cleartext; SRP is the AWS-
-    # recommended browser client flow.  Amplify Auth v6 uses this flow
-    # by default when we pass authFlowType: "USER_SRP_AUTH".
+    # SRP keeps the password out of the browser-to-service request; Amplify
+    # uses this AWS-recommended browser authentication flow.
     "ALLOW_USER_SRP_AUTH",
     # Refresh-token flow for both the SPA and CI scripts.
     "ALLOW_REFRESH_TOKEN_AUTH",

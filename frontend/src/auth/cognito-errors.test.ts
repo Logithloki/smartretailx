@@ -51,7 +51,7 @@ describe("friendlyAuthError", () => {
     expect(friendlyAuthError("string").headline).toBe("Sign in failed");
   });
 
-  // ---- PR B extensions ----------------------------------------------
+  // Recovery messages must not reveal whether an account exists.
 
   it("returns an account-enumeration-safe message for recovery context", () => {
     for (const name of ["NotAuthorizedException", "UserNotFoundException"]) {
