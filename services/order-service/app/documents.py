@@ -11,6 +11,7 @@ import hashlib
 import logging
 
 import boto3
+from botocore.client import Config
 from botocore.exceptions import ClientError
 
 from .models import Order
@@ -34,7 +35,15 @@ class DocumentStore:
     @property
     def client(self):
         if self._client is None:
-            self._client = boto3.client("s3", **self._settings.boto_kwargs())
+            # Force SigV4 so presigned URLs carry X-Amz-Signature. boto3's
+            # default in legacy regions (eu-west-1 included) is SigV2, which
+            # produces AWSAccessKeyId/Signature-style URLs that some clients
+            # and our newman/E2E contract tests do not accept.
+            self._client = boto3.client(
+                "s3",
+                config=Config(signature_version="s3v4"),
+                **self._settings.boto_kwargs(),
+            )
         return self._client
 
     @property
