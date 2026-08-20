@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-20",
+  "environment": "test",
+  "run": 32358604668,
+  "profile": "load",
+  "durationSeconds": 840,
+  "maxVus": 50,
+  "httpRequests": 34636,
+  "requestsPerSecond": 41.21032672869441,
+  "failedRequests": 31829,
+  "failedRate": 0.9189571544058205,
+  "wafRateRule": "per-ip-rate-limit",
+  "wafBlockedRequests": 31828,
+  "apiGatewayRequests": 2809,
+  "apiGateway4xx": 1,
+  "apiGateway5xx": 1,
+  "httpDurationMs": {
+    "average": 59.32287839609063,
+    "p90": 9.383373,
+    "p95": 216.6321815,
+    "p99": 1598.1791145500003,
+    "max": 2893.294335
+  },
+  "productServiceMaxCpuPercent": 95.68508154153824,
+  "productServiceMaxMemoryPercent": 15.234375,
+  "autoscalingObserved": false,
+  "status": "EDGE_RATE_LIMIT_PROVEN",
+  "applicationScalabilityConclusion": "NOT_APPLICABLE"
+}
