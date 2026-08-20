@@ -175,6 +175,7 @@ nav a.active {
   display: flex;
   align-items: center;
   gap: 0.85rem;
+  min-width: 0;
 }
 
 .user-badge {
@@ -188,6 +189,71 @@ nav a.active {
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--text-secondary);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.user-badge > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .app-header {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .header-left {
+    width: 100%;
+    min-width: 0;
+    gap: 1rem;
+  }
+
+  .header-left nav {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+
+  .header-left nav a {
+    flex: 0 0 auto;
+  }
+
+  .header-user {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header {
+    padding-inline: 0.75rem;
+  }
+
+  .header-left {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .header-left nav {
+    width: 100%;
+  }
+
+  .header-user {
+    justify-content: flex-start;
+  }
+
+  .user-badge {
+    flex: 1 1 100%;
+  }
 }
 
 .role-pill {
