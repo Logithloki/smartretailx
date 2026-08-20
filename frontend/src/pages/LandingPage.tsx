@@ -5,6 +5,7 @@ import { getRuntimeConfig } from "../config/runtime-config";
 import { useAuth } from "../context/useAuth";
 import { useCart } from "../context/CartContext";
 import { useIsAdmin } from "../hooks/useIsAdmin";
+import heroImage from "../assets/storefront-hero.jpg";
 
 type Category = {
   title: string;
@@ -70,7 +71,6 @@ export function LandingPage() {
       <header className="store-header">
         <div className="store-shell store-header-inner">
           <Link to="/" className="store-brand" aria-label="SmartRetailX home" onClick={closeMenu}>
-            <span className="store-brand-mark" aria-hidden="true">SR</span>
             <span>SmartRetailX</span>
           </Link>
 
@@ -126,7 +126,7 @@ export function LandingPage() {
               </div>
             </div>
             <div className="store-hero-media">
-              <img src="/images/storefront-hero.jpg" alt="A shopping cart with everyday groceries in a well-stocked store" />
+              <img src={heroImage} alt="A shopping cart with everyday groceries in a well-stocked store" />
               <div className="store-hero-media-caption"><span aria-hidden="true">✦</span> Thoughtful shopping, clearly organised</div>
             </div>
           </div>
@@ -179,7 +179,7 @@ export function LandingPage() {
         <section className="store-final-cta" aria-labelledby="final-heading"><div className="store-shell store-final-cta-inner"><div><p className="store-eyebrow">SmartRetailX</p><h2 id="final-heading">Ready to start shopping?</h2><p>{authed ? "Continue shopping or check the progress of your latest order." : "Create an account to browse the catalogue, build a cart and manage your orders."}</p></div><div className="store-final-actions">{authed ? <><button type="button" className="store-button store-button-light" onClick={goShop}>Continue shopping</button><Link to="/orders" className="store-button store-button-outline-light">View my orders</Link></> : <><Link to="/products" className="store-button store-button-light">Browse products</Link><Link to="/signup" className="store-button store-button-outline-light">Create account</Link></>}</div></div></section>
       </main>
 
-      <footer className="store-footer"><div className="store-shell store-footer-grid"><div><Link to="/" className="store-brand store-brand-footer"><span className="store-brand-mark" aria-hidden="true">SR</span><span>SmartRetailX</span></Link><p>A modern online store with secure accounts, clear shopping tools and helpful order updates.</p></div><nav aria-label="Footer navigation"><Link to="/">Home</Link><Link to="/products">Products</Link>{authed ? <><Link to="/orders">My orders</Link><Link to="/profile">Account</Link></> : <><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></>}</nav></div><div className="store-shell store-footer-bottom"><span>© {new Date().getFullYear()} SmartRetailX</span><span>Shopping made clearer.</span></div></footer>
+      <footer className="store-footer"><div className="store-shell store-footer-grid"><div><Link to="/" className="store-brand store-brand-footer"><span>SmartRetailX</span></Link><p>A modern online store with secure accounts, clear shopping tools and helpful order updates.</p></div><nav aria-label="Footer navigation"><Link to="/">Home</Link><Link to="/products">Products</Link>{authed ? <><Link to="/orders">My orders</Link><Link to="/profile">Account</Link></> : <><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></>}</nav></div><div className="store-shell store-footer-bottom"><span>© {new Date().getFullYear()} SmartRetailX</span><span>Shopping made clearer.</span></div></footer>
     </div>
   );
 }

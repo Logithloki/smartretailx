@@ -16,7 +16,7 @@ test.describe("public storefront", () => {
   test("guest storefront renders with working navigation and no horizontal overflow", async ({ page }) => {
     await page.goto(`${baseURL!.replace(/\/$/, "")}/`);
 
-    await expect(page.getByRole("heading", { name: /shop smarter/i, level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /everything you need/i, level: 1 })).toBeVisible();
     await expect(
       page.getByRole("img", { name: /shopping cart with everyday groceries/i }),
     ).toBeVisible();
