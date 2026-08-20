@@ -65,8 +65,10 @@ class InMemoryUserRepository:
 class CognitoUserRepository:
     """Reads the Terraform-managed user pool via cognito-idp admin APIs.
 
-    The task role grants exactly AdminGetUser / AdminListGroupsForUser /
-    ListUsers on this one pool ARN.
+    The task role grants only the Cognito directory read operations needed for
+    this pool. Directory listings use one group-membership pass rather than an
+    AdminListGroupsForUser request for every listed user; the latter creates an
+    avoidable N+1 request pattern and is vulnerable to Cognito throttling.
     """
 
     def __init__(self, settings):
@@ -110,13 +112,57 @@ class CognitoUserRepository:
         )
         return [g["GroupName"] for g in response.get("Groups", [])]
 
+    def _group_memberships(self) -> dict[str, list[str]]:
+        """Return user-to-group memberships with bounded Cognito calls.
+
+        Cognito's ListUsers response does not include group membership. Fetch
+        the groups once, then list each group's members once per page. This is
+        proportional to the number of groups rather than the number of users,
+        so a directory page cannot turn into an N+1 burst of admin API calls.
+        """
+        memberships: dict[str, list[str]] = {}
+        groups_token: str | None = None
+
+        while True:
+            kwargs: dict[str, object] = {"UserPoolId": self._pool_id, "Limit": 60}
+            if groups_token:
+                kwargs["NextToken"] = groups_token
+            response = self.client.list_groups(**kwargs)
+            for group in response.get("Groups", []):
+                group_name = group.get("GroupName")
+                if not group_name:
+                    continue
+                users_token: str | None = None
+                while True:
+                    user_kwargs: dict[str, object] = {
+                        "UserPoolId": self._pool_id,
+                        "GroupName": group_name,
+                        "Limit": 60,
+                    }
+                    if users_token:
+                        user_kwargs["NextToken"] = users_token
+                    user_response = self.client.list_users_in_group(**user_kwargs)
+                    for user in user_response.get("Users", []):
+                        username = user.get("Username")
+                        if username:
+                            memberships.setdefault(username, []).append(group_name)
+                    users_token = user_response.get("NextToken")
+                    if not users_token:
+                        break
+            groups_token = response.get("NextToken")
+            if not groups_token:
+                break
+
+        return memberships
+
     def list_users(self, limit: int = 25, next_token: str | None = None):
         kwargs: dict = {"UserPoolId": self._pool_id, "Limit": limit}
         if next_token:
             kwargs["PaginationToken"] = next_token
         response = self.client.list_users(**kwargs)
+        memberships = self._group_memberships()
         users = [
-            self._to_profile(raw, self._groups_for(raw["Username"]))
+            self._to_profile(raw, memberships.get(raw["Username"], []))
             for raw in response.get("Users", [])
         ]
         return users, response.get("PaginationToken")

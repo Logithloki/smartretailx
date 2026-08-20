@@ -257,7 +257,9 @@ resource "aws_iam_role_policy" "user_task" {
         "cognito-idp:AdminGetUser",
         "cognito-idp:AdminListGroupsForUser",
         "cognito-idp:AdminDeleteUser",
-        "cognito-idp:ListUsers"
+        "cognito-idp:ListUsers",
+        "cognito-idp:ListGroups",
+        "cognito-idp:ListUsersInGroup"
       ]
       Resource = [aws_cognito_user_pool.main.arn]
     }]
