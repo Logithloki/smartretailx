@@ -161,8 +161,8 @@ test.describe("customer critical journey", () => {
     await downloadBtn.click();
     const response = await responsePromise;
     expect(response.ok()).toBe(true);
-    const payload = (await response.json()) as { downloadUrl?: string };
-    expect(payload.downloadUrl).toContain("X-Amz-Signature");
+    const payload = (await response.json()) as { url?: string };
+    expect(payload.url).toContain("X-Amz-Signature");
 
     const popup = await popupPromise;
     await popup?.close();
