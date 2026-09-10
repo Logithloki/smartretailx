@@ -1,6 +1,6 @@
 # Deliberate demo-scale exceptions. Checkov remains blocking for every other
 # rule; each exception maps to a cost/architecture ADR in
-# docs/architecture-and-pipeline.md and must be revisited before real commerce.
+# the cost/architecture ADRs and must be revisited before real commerce.
 framework:
   - terraform
 compact: true

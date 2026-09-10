@@ -12,7 +12,7 @@
 # is uniform across the HTTP and WebSocket edges.
 #
 # Component status: **needs CW-3a validation on real AWS** - LocalStack
-# Community cannot emulate API Gateway v2 WebSocket APIs (CLAUDE.md).
+# Community cannot emulate API Gateway v2 WebSocket APIs.
 #
 # Gating: the WebSocket API resource itself is free at rest (mirrors how
 # the HTTP API in compute.tf is not count-gated); the stage, routes,

@@ -1,6 +1,6 @@
 """User repositories.
 
-LocalStack Community cannot emulate Cognito (CLAUDE.md, local-first section),
+LocalStack Community cannot emulate Cognito,
 so local development runs against an in-memory stub with the same interface.
 The Cognito-backed implementation is exercised by moto in the unit tests and
 on real AWS during checkpoint windows.
