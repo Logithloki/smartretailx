@@ -1,11 +1,11 @@
-# ─── EVENTBRIDGE PIPES — the differentiator (ADR + CLAUDE.md) ─
+# ─── EVENTBRIDGE PIPES — the differentiator (ADR-02) ──────────
 #
 # DynamoDB Streams → EventBridge bus with **zero glue Lambda**. Everything
 # from stream read, filter, to bus put is native AWS wiring; the report and
 # viva both lean on this as the "innovative service choice" story.
 #
 # Component status: **needs CW-3a validation on real AWS** — LocalStack
-# Community cannot emulate EventBridge Pipes (CLAUDE.md cost-guardrails).
+# Community cannot emulate EventBridge Pipes.
 #
 # Filter design note (viva answer):
 #   The spec asks for "MODIFY where NEW_IMAGE.status != OLD_IMAGE.status".

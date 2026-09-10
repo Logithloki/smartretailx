@@ -71,7 +71,7 @@ resource "aws_ses_email_identity" "sender" {
 # Inventory announces the outcome on SNS; the Order Service consumes it here
 # and moves the order to its terminal state.
 #
-# Both event types are subscribed (guide correction GC-1, docs/guide-corrections.md):
+# Both event types are subscribed (guide correction GC-1):
 # this queue is the only route by which an order leaves PENDING, so filtering to
 # order-rejected alone would strand every successful order.
 resource "aws_sqs_queue" "order_events" {

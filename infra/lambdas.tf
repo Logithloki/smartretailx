@@ -300,7 +300,7 @@ resource "aws_cloudwatch_log_group" "reconciliation" {
 # policy - kept out of lambdas.tf so this file stays about function config.
 #
 # All three needs CW-3a validation on real AWS: LocalStack Community cannot
-# emulate WebSocket APIs (CLAUDE.md cost-guardrails).
+# emulate WebSocket APIs.
 
 # --- shared assume role + basic policy generators (log + xray) ---
 

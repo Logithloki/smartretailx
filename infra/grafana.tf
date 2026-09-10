@@ -22,8 +22,7 @@
 #             admin creds still required.
 #
 # Persistence: intentionally none (ephemeral Fargate storage). Dashboards
-# are exported as JSON and committed to `docs/grafana-dashboards/` on
-# creation, then re-imported after a task restart. This is acceptable at
+# are exported as JSON and re-imported after a task restart. This is acceptable at
 # demo scale; a production path would add EFS (Fargate supports it) or
 # a Postgres backend on Aurora.
 

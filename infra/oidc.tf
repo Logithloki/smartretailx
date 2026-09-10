@@ -1,8 +1,7 @@
 # ─── GitHub Actions OIDC federation (backlog item 10) ────────
 #
 # Removes the long-lived AWS_ACCESS_KEY_ID from GitHub secrets - required
-# for the assignment ("delete stored AWS access keys" in the CLAUDE.md
-# fix backlog). Instead, GitHub's own OIDC IdP mints a short-lived JWT
+# for the assignment ("delete stored AWS access keys" in the fix backlog). Instead, GitHub's own OIDC IdP mints a short-lived JWT
 # for each workflow run, and we let it exchange that JWT for a temporary
 # IAM role (aws-actions/configure-aws-credentials handles the STS
 # AssumeRoleWithWebIdentity call).

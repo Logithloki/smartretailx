@@ -8,8 +8,8 @@
 #
 # Component status: **needs CW-3b validation on real AWS.** CloudFront
 # distributions take 15-20 min to create/delete on both directions; per
-# the CLAUDE.md amendment they are NOT count-gated. WAF stays once added
-# (~£5/mo, ledgered in docs/cost-ledger.md).
+# the design amendment they are NOT count-gated. WAF stays once added
+# (~£5/mo, ledgered).
 #
 # ─── CRITICAL correctness point (Addendum G.1.1 in the guide) ─────
 # CloudFront's default managed cache/origin-request policies strip the
