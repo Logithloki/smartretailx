@@ -135,11 +135,11 @@ def test_plan_role_can_read_the_existing_baseline_state_key() -> None:
     oidc = (ROOT / "infra" / "oidc.tf").read_text(encoding="utf-8")
 
     assert (
-        'arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate"'
+        'arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/terraform.tfstate"'
         in oidc
     )
     assert (
-        'arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate.tflock"'
+        'arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/terraform.tfstate.tflock"'
         in oidc
     )
 

@@ -248,16 +248,16 @@ resource "aws_iam_role_policy" "gha_terraform_plan_state_lock" {
       {
         Effect   = "Allow"
         Action   = ["s3:ListBucket", "s3:GetBucketVersioning"]
-        Resource = "arn:aws:s3:::smartretailx-tfstate-322551984077"
+        Resource = "arn:aws:s3:::smartretailx-tfstate-840514731776"
       },
       {
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         Resource = [
-          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate",
-          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate.tflock",
-          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate",
-          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate.tflock",
+          "arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/terraform.tfstate",
+          "arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/terraform.tfstate.tflock",
+          "arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/*/terraform.tfstate",
+          "arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/*/terraform.tfstate.tflock",
         ]
       },
       {
@@ -409,17 +409,17 @@ resource "aws_iam_role_policy" "gha_terraform_apply_iam" {
         Sid      = "TerraformStateBucketList"
         Effect   = "Allow"
         Action   = ["s3:ListBucket", "s3:GetBucketVersioning"]
-        Resource = "arn:aws:s3:::smartretailx-tfstate-322551984077"
+        Resource = "arn:aws:s3:::smartretailx-tfstate-840514731776"
       },
       {
         Sid    = "TerraformStateObjects"
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         Resource = [
-          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate",
-          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/terraform.tfstate.tflock",
-          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate",
-          "arn:aws:s3:::smartretailx-tfstate-322551984077/smartretailx/*/terraform.tfstate.tflock",
+          "arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/terraform.tfstate",
+          "arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/terraform.tfstate.tflock",
+          "arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/*/terraform.tfstate",
+          "arn:aws:s3:::smartretailx-tfstate-840514731776/smartretailx/*/terraform.tfstate.tflock",
         ]
       },
     ]
