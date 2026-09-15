@@ -7,6 +7,11 @@ on:
         description: Main-branch immutable release run ID
         required: true
         type: string
+      bootstrap_only:
+        description: Create the initial Terraform stack without deploying runtime artifacts
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   id-token: write
@@ -197,6 +202,7 @@ jobs:
           terraform apply tfplan
 
   ecs:
+    if: inputs.bootstrap_only != true
     needs: [release, apply_reviewed_plan]
     strategy:
       fail-fast: true
@@ -214,6 +220,7 @@ jobs:
       run_migration: ${{ matrix.migrate }}
 
   lambdas:
+    if: inputs.bootstrap_only != true
     needs: [release, ecs]
     strategy:
       fail-fast: true
@@ -234,6 +241,7 @@ jobs:
       environment_name: development
 
   frontend:
+    if: inputs.bootstrap_only != true
     needs: [release, ecs, lambdas]
     uses: ./.github/workflows/reusable-deploy-frontend.yml
     with:
@@ -242,6 +250,7 @@ jobs:
       environment_name: development
 
   verify:
+    if: inputs.bootstrap_only != true
     needs: frontend
     uses: ./.github/workflows/reusable-smoke-tests.yml
     with:
