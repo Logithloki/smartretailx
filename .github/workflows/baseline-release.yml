@@ -88,7 +88,6 @@ jobs:
             '{service_image_references:{order:$order,inventory:$inventory,product:$product,user:$user}}' \
             > release.auto.tfvars.json
       - name: Refuse an empty, isolated, or wrong Terraform state
-        if: inputs.bootstrap_only != true
         working-directory: infra
         shell: bash
         run: |
@@ -96,8 +95,10 @@ jobs:
           # No backend override: backend.tf is the deployed baseline lineage,
           # smartretailx/terraform.tfstate. Never substitute a profile backend.
           terraform init -reconfigure
-          terraform state list > "$RUNNER_TEMP/baseline-state.txt"
-          python ../scripts/check_baseline_plan.py --state-list "$RUNNER_TEMP/baseline-state.txt"
+          if [[ '${{ inputs.bootstrap_only }}' != 'true' ]]; then
+            terraform state list > "$RUNNER_TEMP/baseline-state.txt"
+            python ../scripts/check_baseline_plan.py --state-list "$RUNNER_TEMP/baseline-state.txt"
+          fi
       - name: Produce and guard the same-state baseline plan
         working-directory: infra
         shell: bash
