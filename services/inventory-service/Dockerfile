@@ -1,6 +1,6 @@
 # Build context is services/:
 #   docker buildx build --platform linux/arm64 -f inventory-service/Dockerfile services/
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

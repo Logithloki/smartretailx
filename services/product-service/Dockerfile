@@ -1,7 +1,7 @@
 # Build context is services/ (not this directory) so the shared srx_common
 # package can be copied in. Build with:
 #   docker buildx build --platform linux/arm64 -f product-service/Dockerfile services/
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
