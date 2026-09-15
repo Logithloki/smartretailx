@@ -133,6 +133,13 @@ jobs:
           set -euo pipefail
           jq -n --arg release '${{ needs.release.outputs.release_id }}' \
             '{targetRelease:$release,ecs:{},lambdas:{},frontend:null}' > rollback.json
+          cluster_status=$(aws ecs describe-clusters \
+            --clusters '${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}' \
+            --query 'clusters[0].status' --output text 2>/dev/null || true)
+          if [[ "$cluster_status" != "ACTIVE" ]]; then
+            echo "No existing baseline ECS cluster found; this is the initial stack bootstrap."
+            exit 0
+          fi
           for service in order inventory product user; do
             task=$(aws ecs describe-services --cluster '${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}' \
               --services '${{ vars.SMARTRETAILX_PROJECT_NAME }}-'"$service"'-service' \
@@ -261,6 +268,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$(jq '.ecs | length' rollback.json)" -eq 0 ]]; then
+            echo "No previous baseline pointers exist; initial bootstrap has no rollback target."
+            exit 0
+          fi
           for service in order inventory product user; do
             task=$(jq -r --arg service "$service" '.ecs[$service]' rollback.json)
             aws ecs update-service --cluster '${{ vars.SMARTRETAILX_ECS_CLUSTER_NAME }}' \
