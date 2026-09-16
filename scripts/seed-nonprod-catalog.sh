@@ -22,7 +22,7 @@ set -euo pipefail
 : "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
 
 case "$ENVIRONMENT_NAME" in
-  test|staging)
+  development|test|staging)
     ;;
   *)
     echo "REFUSED: seed-nonprod-catalog.sh must never run for '$ENVIRONMENT_NAME'" >&2
@@ -41,6 +41,21 @@ prod-mouse-002|Magic Mouse|79.99|Accessories|150|Wireless multi-touch mouse with
 prod-monitor-003|4K Monitor 27inch|599.99|Electronics|40|27-inch 4K UHD IPS display with HDR400, USB-C 90 W power delivery and factory colour calibration.
 prod-keyboard-004|Mechanical Keyboard|149.99|Accessories|200|Full-size mechanical keyboard with hot-swappable switches, per-key RGB backlighting and USB-C connectivity.
 prod-headset-005|Noise Cancelling Headphones|349.99|Electronics|80|Over-ear noise cancelling headphones with 30-hour battery life, spatial audio and travel case.
+prod-tablet-006|iPad Air 11|799.99|Electronics|35|11-inch Liquid Retina display with M2 chip, 128 GB storage and Apple Pencil support.
+prod-charger-007|USB-C Fast Charger|39.99|Accessories|300|65 W GaN USB-C charger with dual-port output and foldable prongs for travel.
+prod-webcam-008|HD Webcam Pro|129.99|Electronics|3|1080p HD webcam with built-in ring light, auto-focus and noise-reducing dual microphone.
+prod-stand-009|Laptop Stand Aluminium|49.99|Accessories|0|Adjustable aluminium laptop stand with ventilated design and cable management channel.
+prod-speaker-010|Portable Bluetooth Speaker|89.99|Electronics|120|IPX7 waterproof Bluetooth 5.3 speaker with 20-hour battery and 360-degree sound.
+prod-hub-011|USB-C Hub 7-in-1|59.99|Accessories|4|7-in-1 USB-C hub with HDMI 4K, SD card reader, 3x USB-A and 100 W pass-through charging.
+prod-cable-012|Braided USB-C Cable 2m|14.99|Accessories|500|Nylon braided USB-C to USB-C cable rated for 100 W PD and 10 Gbps data transfer.
+prod-ssd-013|Portable SSD 1TB|109.99|Electronics|25|1 TB external NVMe SSD with USB-C, 1050 MB/s read speed and shock-resistant casing.
+prod-earbuds-014|Wireless Earbuds Pro|179.99|Electronics|2|Active noise cancelling true wireless earbuds with 8-hour playtime and wireless charging case.
+prod-mousepad-015|Desk Mat XL|29.99|Accessories|0|Extra-large 900x400 mm desk mat with stitched edges, non-slip rubber base and water-resistant surface.
+prod-tracker-016|Bluetooth Tracker 4-Pack|99.99|Accessories|60|Ultra-thin Bluetooth item trackers with replaceable battery, crowd-find network and 60 m range.
+prod-router-017|Wi-Fi 6E Mesh Router|249.99|Electronics|15|Tri-band Wi-Fi 6E mesh router covering 5000 sq ft with 2.5 Gbps wired backhaul port.
+prod-powerbank-018|Power Bank 20000mAh|44.99|Accessories|1|20000 mAh portable power bank with 65 W USB-C output, LED display and airline-approved capacity.
+prod-stylus-019|Digital Stylus Pen|69.99|Accessories|90|Pressure-sensitive digital stylus with tilt support, magnetic attachment and USB-C quick charge.
+prod-camera-020|Action Camera 4K|199.99|Electronics|5|4K 60fps action camera with electronic image stabilisation, 10 m waterproofing and voice control.
 CATALOG
 
 http_upsert_product() {

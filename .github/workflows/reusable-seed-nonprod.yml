@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$ENVIRONMENT_NAME" in
-            test|staging) echo "seeding $ENVIRONMENT_NAME" ;;
+            development|test|staging) echo "seeding $ENVIRONMENT_NAME" ;;
             *) echo "REFUSED: seed job must never bind to '$ENVIRONMENT_NAME'"; exit 1 ;;
           esac
       - name: Validate seed Environment configuration

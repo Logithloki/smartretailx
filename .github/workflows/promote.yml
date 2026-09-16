@@ -116,7 +116,7 @@ jobs:
       environment_name: ${{ inputs.environment }}
 
   seed:
-    if: inputs.environment == 'test' || inputs.environment == 'staging'
+    if: inputs.environment == 'development' || inputs.environment == 'test' || inputs.environment == 'staging'
     needs: frontend
     uses: ./.github/workflows/reusable-seed-nonprod.yml
     with:
